@@ -1,0 +1,9 @@
+{
+  "name": "elm-serializer",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "/Users/doctor/Downloads/elm make src/Main.elm --output=dist/app.js && node src/Main.js example/Model.elm Model"
+  }
+}

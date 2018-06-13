@@ -108,7 +108,7 @@ aliasDeclEncoderFun name declaration =
 
 aliasDeclDecoder : Alias.TypeAlias -> String
 aliasDeclDecoder { name, typeAnnotation } =
-  [ String.join " " [ "Decode.succeed", name, "|> andMap" ]
+  [ String.join " " [ "Decode.succeed", name, "\n|> andMap" ]
   , typeAnnotation
     |> Tuple.second
     |> typeAnnotationDecoder

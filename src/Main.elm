@@ -42,11 +42,11 @@ init flags =
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
-    FromJs (value, type_) ->
+    FromJs (value, name) ->
       ( model
       , value
         |> Elm.Parser.parse
-        |> Result.map (extractType type_)
+        |> Result.map (extractType name)
         |> Result.map returnToTuple
         |> Result.map toJs
         |> Result.withDefault Cmd.none
@@ -57,11 +57,11 @@ subscriptions model =
   fromJs FromJs
 
 extractType : String -> RawFile -> ReturnType
-extractType type_ rawFile =
+extractType name rawFile =
   Elm.Processing.process Elm.Processing.init rawFile
   |> .declarations
   |> List.map Tuple.second
-  |> extractFromDeclaration type_
+  |> extractFromDeclaration name
 
 extractFromDeclaration : String -> List Declaration.Declaration -> ReturnType
 extractFromDeclaration name declarations =

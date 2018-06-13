@@ -25,10 +25,18 @@ const readedFile = fs.readFile(completeFilePath, (err, res) => {
   app.ports.fromJs.send([ res.toString(), name ])
 })
 
-const timeout = setTimeout(() => {
-  console.error('Timeout, execution took too long to execute. Please, open an issue on GitHub with your use case.')
-  process.exit(1)
-}, 10000)
+app.ports.killMePleaseKillMe.subscribe(value => {
+  process.exit(0)
+})
+
+const timeout = () => {
+  setTimeout(() => {
+    console.error('Timeout, execution took too long to execute. Please, open an issue on GitHub with your use case.')
+    process.exit(1)
+  }, 10000)
+}
+
+let timeoutValue = timeout()
 
 app.ports.toJs.subscribe(decoderAndEncoder => {
   if (decoderAndEncoder === null) {
@@ -37,7 +45,7 @@ app.ports.toJs.subscribe(decoderAndEncoder => {
   }
   const decoder = decoderAndEncoder[0]
   const encoder = decoderAndEncoder[1]
-  clearTimeout(timeout)
+  clearTimeout(timeoutValue)
   if (fs.existsSync(completeGeneratedFilePath)) {
     if (!fs.existsSync(filePathGenerateFolder)) {
       fs.mkdirSync(filePathGenerateFolder)
@@ -52,5 +60,5 @@ app.ports.toJs.subscribe(decoderAndEncoder => {
       process.exit(1)
     }
   }
-  process.exit(0)
+  timeoutValue = timeout()
 })

@@ -53,10 +53,59 @@ extractFromDeclaration type_ declarations =
   declarations
   |> List.concatMap keepAliasDecl
   |> findByName type_
-  |> Maybe.map (.typeAnnotation >> Tuple.second)
-  -- Maybe TypeAnnotation
+  |> Maybe.map convertAliasDecl
   |> Debug.log "file"
-  |> always ""
+  |> Maybe.withDefault ""
+
+convertAliasDecl : Alias.TypeAlias -> String
+convertAliasDecl { name, typeAnnotation } =
+  [ String.join " " [ "Decode.succeed", name, "|> andMap " ]
+  , typeAnnotation
+    |> Tuple.second
+    |> convertTypeAnnotation
+  ]
+  |> String.join ""
+  |> surroundByParen
+
+convertTypeAnnotation : Annotation.TypeAnnotation -> String
+convertTypeAnnotation typeAnnotation =
+  case typeAnnotation of
+    Annotation.Record definition -> convertRecord definition
+    Annotation.GenericType type_ -> convertGenericType type_
+    Annotation.Typed moduleName value annotations -> convertTyped moduleName value annotations
+    -- Annotation.Unit ->
+    -- Annotation.Tupled annotations ->
+    -- Annotation.GenericRecord name definition ->
+    -- Annotation.FunctionTypeAnnotation annotation annotation ->
+    _ -> ""
+
+convertGenericType : String -> String
+convertGenericType type_ =
+  case type_ of
+    "String" -> "Decode.string"
+    "Int" -> "Decode.int"
+    "Float" -> "Decode.float"
+    "Bool" -> "Decode.bool"
+    _ -> ""
+
+convertTyped : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
+convertTyped moduleName type_ annotations =
+  convertGenericType type_
+
+convertRecord : Annotation.RecordDefinition -> String
+convertRecord definition =
+  definition
+  |> List.map convertRecordField
+  |> String.join "|> andMap "
+
+convertRecordField : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
+convertRecordField (name, (_, content)) =
+  [ "Decode.field"
+  , surroundByQuotes name
+  , surroundByParen (convertTypeAnnotation content)
+  ]
+  |> String.join " "
+  |> surroundByParen
 
 keepAliasDecl : Declaration.Declaration -> List Alias.TypeAlias
 keepAliasDecl declaration =

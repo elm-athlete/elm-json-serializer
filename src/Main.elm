@@ -9,6 +9,8 @@ import Elm.Syntax.Declaration as Declaration
 import Elm.Syntax.TypeAlias as Alias
 import Elm.Syntax.TypeAnnotation as Annotation
 
+import String.Extra as String
+
 type alias Model =
   Int
 
@@ -50,11 +52,11 @@ type alias GenerationRequirements =
 generateFileContent : String -> String -> GenerationRequirements -> String
 generateFileContent name content { moduleNamespace, imported, andMap } =
   [ moduleGeneration name moduleNamespace
-  , spaceJoin [ "import", imported ]
+  , String.spaceJoin [ "import", imported ]
   , andMap
   , content
   ]
-  |> newlineJoin
+  |> String.newlineJoin
 
 moduleGeneration : String -> String -> String
 moduleGeneration name moduleNamespace =
@@ -62,7 +64,7 @@ moduleGeneration name moduleNamespace =
   , String.join "." [ name, moduleNamespace ]
   , "exposing (..)"
   ]
-  |> spaceJoin
+  |> String.spaceJoin
 
 main : Program () Model Msg
 main =
@@ -120,40 +122,40 @@ aliasDeclEncoder { name, typeAnnotation } =
   , typeAnnotation
     |> Tuple.second
     |> typeAnnotationEncoder
-    |> surroundByBrackets
+    |> String.surroundByBrackets
   ]
-  |> spaceJoin
-  |> surroundByParen
+  |> String.spaceJoin
+  |> String.surroundByParen
 
 aliasDeclEncoderFun : String -> Alias.TypeAlias -> String
 aliasDeclEncoderFun name declaration =
-  let functionName = camelize name ++ "Encoder" in
+  let functionName = String.camelize name ++ "Encoder" in
   [ [ functionName, ":", name, "-> Encode.Value" ]
   , [ functionName, "record =" ]
-  , [ indent (aliasDeclEncoder declaration) ]
+  , [ String.indent (aliasDeclEncoder declaration) ]
   ]
-  |> List.map spaceJoin
-  |> newlineJoin
+  |> List.map String.spaceJoin
+  |> String.newlineJoin
 
 aliasDeclDecoder : Alias.TypeAlias -> String
 aliasDeclDecoder { name, typeAnnotation } =
-  [ spaceJoin [ "Decode.succeed", name, newline "|> andMap" ]
+  [ String.spaceJoin [ "Decode.succeed", name, String.newline "|> andMap" ]
   , typeAnnotation
     |> Tuple.second
     |> typeAnnotationDecoder
   ]
-  |> spaceJoin
-  |> surroundByParen
+  |> String.spaceJoin
+  |> String.surroundByParen
 
 aliasDeclDecoderFun : String -> Alias.TypeAlias -> String
 aliasDeclDecoderFun name declaration =
-  let functionName = camelize name ++ "Decoder" in
+  let functionName = String.camelize name ++ "Decoder" in
   [ [ functionName, ": Decoder", name ]
   , [ functionName, "=" ]
-  , [ indent (aliasDeclDecoder declaration) ]
+  , [ String.indent (aliasDeclDecoder declaration) ]
   ]
-  |> List.map spaceJoin
-  |> newlineJoin
+  |> List.map String.spaceJoin
+  |> String.newlineJoin
 
 typeAnnotationDecoder : Annotation.TypeAnnotation -> String
 typeAnnotationDecoder typeAnnotation =
@@ -220,19 +222,19 @@ recordEncoder definition =
 recordFieldDecoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
 recordFieldDecoder (name, (_, content)) =
   [ "Decode.field"
-  , surroundByQuotes name
-  , surroundByParen (typeAnnotationDecoder content)
+  , String.surroundByQuotes name
+  , String.surroundByParen (typeAnnotationDecoder content)
   ]
-  |> spaceJoin
-  |> surroundByParen
+  |> String.spaceJoin
+  |> String.surroundByParen
 
 recordFieldEncoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
 recordFieldEncoder (name, (_, content)) =
-  [ surroundByQuotes name
-  , surroundByParen (typeAnnotationEncoder content ++ " record." ++ name)
+  [ String.surroundByQuotes name
+  , String.surroundByParen (typeAnnotationEncoder content ++ " record." ++ name)
   ]
   |> String.join ", "
-  |> surroundByParen
+  |> String.surroundByParen
 
 keepAliasDecl : Declaration.Declaration -> List Alias.TypeAlias
 keepAliasDecl declaration =
@@ -256,46 +258,9 @@ extractRecord annotation =
     Annotation.Record definition -> Just definition
     _ -> Nothing
 
-surroundByQuotes : String -> String
-surroundByQuotes value =
-  "\"" ++ value ++ "\""
-
-surroundByParen : String -> String
-surroundByParen value =
-  "(" ++ value ++ ")"
-
-surroundByBrackets : String -> String
-surroundByBrackets value =
-  "[" ++ value ++ "]"
-
 andMapFunction : String
 andMapFunction =
   [ "andMap : Decoder a -> Decoder (a -> b) -> Decoder b"
   , "andMap = Decode.map2 (|>)"
   ]
-  |> newlineJoin
-
-camelize : String -> String
-camelize value =
-  value
-  |> String.toList
-  |> lowercaseFirst
-  |> String.fromList
-
-lowercaseFirst : List Char -> List Char
-lowercaseFirst chars =
-  case chars of
-    hd :: tl -> Char.toLower hd :: tl
-    [] -> []
-
-indent : String -> String
-indent = (++) " "
-
-spaceJoin : List String -> String
-spaceJoin = String.join " "
-
-newlineJoin : List String -> String
-newlineJoin = String.join "\n"
-
-newline : String -> String
-newline = (++) "\n"
+  |> String.newlineJoin

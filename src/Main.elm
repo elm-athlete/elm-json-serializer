@@ -23,9 +23,26 @@ type alias ReturnType =
   , encoder : String
   }
 
-returnToTuple : ReturnType -> (String, String)
-returnToTuple { decoder, encoder } =
-  (decoder, encoder)
+returnToTuple : String -> ReturnType -> (String, String)
+returnToTuple name { decoder, encoder } =
+  (addModuleName name True decoder, addModuleName name False encoder)
+
+addModuleName name decoder content =
+  [ [ "module"
+    , name ++ "." ++ if decoder then "Decoder" else "Encoder"
+    , "exposing"
+    , "(..)"
+    ]
+    |> String.join " "
+  , "\n\n"
+  , [ "import"
+    , if decoder then "Json.Decode as Decode" else "Json.Encode as Encode"
+    ]
+    |> String.join " "
+  , "\n\n"
+  , content
+  ]
+  |> String.join ""
 
 main : Program () Model Msg
 main =
@@ -47,7 +64,7 @@ update msg model =
       , value
         |> Elm.Parser.parse
         |> Result.map (extractType name)
-        |> Result.map returnToTuple
+        |> Result.map (returnToTuple name)
         |> Result.map toJs
         |> Result.withDefault Cmd.none
       )

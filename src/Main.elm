@@ -4,9 +4,10 @@ import Json.Decode as Decode
 import Elm.Parser
 import Elm.RawFile exposing (RawFile)
 import Elm.Processing
-import Elm.Syntax.Declaration
-import Elm.Syntax.TypeAlias
-import Elm.Syntax.TypeAnnotation
+import Elm.Syntax.Range as Range
+import Elm.Syntax.Declaration as Declaration
+import Elm.Syntax.TypeAlias as Alias
+import Elm.Syntax.TypeAnnotation as Annotation
 
 type alias Model =
   Int
@@ -47,7 +48,7 @@ extractType type_ rawFile =
   |> List.map Tuple.second
   |> extractFromDeclaration type_
 
-extractFromDeclaration : String -> List Elm.Syntax.Declaration.Declaration -> String
+extractFromDeclaration : String -> List Declaration.Declaration -> String
 extractFromDeclaration type_ declarations =
   declarations
   |> List.concatMap keepAliasDecl
@@ -57,13 +58,13 @@ extractFromDeclaration type_ declarations =
   |> Debug.log "file"
   |> always ""
 
-keepAliasDecl : Elm.Syntax.Declaration.Declaration -> List Elm.Syntax.TypeAlias.TypeAlias
+keepAliasDecl : Declaration.Declaration -> List Alias.TypeAlias
 keepAliasDecl declaration =
   case declaration of
-    Elm.Syntax.Declaration.AliasDecl decl -> List.singleton decl
+    Declaration.AliasDecl decl -> List.singleton decl
     _ -> []
 
-findByName : String -> List Elm.Syntax.TypeAlias.TypeAlias -> Maybe Elm.Syntax.TypeAlias.TypeAlias
+findByName : String -> List Alias.TypeAlias -> Maybe Alias.TypeAlias
 findByName name aliases =
   case aliases of
     [] -> Nothing
@@ -73,8 +74,8 @@ findByName name aliases =
       else
         findByName name tl
 
-extractRecord : Elm.Syntax.TypeAnnotation.TypeAnnotation -> Maybe Elm.Syntax.TypeAnnotation.RecordDefinition
+extractRecord : Annotation.TypeAnnotation -> Maybe Annotation.RecordDefinition
 extractRecord annotation =
   case annotation of
-    Elm.Syntax.TypeAnnotation.Record definition -> Just definition
+    Annotation.Record definition -> Just definition
     _ -> Nothing

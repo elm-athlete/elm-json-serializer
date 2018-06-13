@@ -7,5 +7,6 @@
     "start": "/Users/doctor/Downloads/elm make src/Main.elm --output=dist/app.js && node src/Main.js example/Model.elm Model"
   },
   "dependencies": {
+    "command-exists": "^1.2.6"
   }
 }

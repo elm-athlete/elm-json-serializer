@@ -7,6 +7,19 @@ const cwd = process.cwd()
 const completeFilePath = cwd + '/' + filePath
 
 const fs = require('fs')
-const readedFile = fs.readFile(completeFilePath, function(err, res) {
+const readedFile = fs.readFile(completeFilePath, (err, res) => {
   app.ports.fromJs.send([ res.toString(), type ])
 })
+
+app.ports.toJs.subscribe(decoderAndEncoder => {
+  const decoder = decoderAndEncoder[0]
+  const encoder = decoderAndEncoder[1]
+  console.log(decoder)
+  console.log(encoder)
+  process.exit(0)
+})
+
+setTimeout(() => {
+  console.error('Timeout, execution took too long to execute. Please, open an issue on GitHub with your use case.')
+  process.exit(1)
+}, 10000)

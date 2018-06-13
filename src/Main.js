@@ -31,11 +31,13 @@ const timeout = setTimeout(() => {
 }, 10000)
 
 app.ports.toJs.subscribe(decoderAndEncoder => {
+  if (decoderAndEncoder === null) {
+    console.error(name, ' has not been found in the file you indicated. Please, check your settings.')
+    process.exit(1)
+  }
   const decoder = decoderAndEncoder[0]
   const encoder = decoderAndEncoder[1]
   clearTimeout(timeout)
-  console.log(decoder)
-  console.log(encoder)
   if (fs.existsSync(completeGeneratedFilePath)) {
     if (!fs.existsSync(filePathGenerateFolder)) {
       fs.mkdirSync(filePathGenerateFolder)

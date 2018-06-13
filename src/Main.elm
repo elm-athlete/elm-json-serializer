@@ -16,16 +16,16 @@ type Msg
   = FromJs (String, String)
 
 port fromJs : ((String, String) -> msg) -> Sub msg
-port toJs : (String, String) -> Cmd msg
+port toJs : Maybe (String, String) -> Cmd msg
 
 type alias ReturnType =
-  { decoder : String
-  , encoder : String
-  }
+  Maybe { decoder : String
+        , encoder : String
+        }
 
-returnToTuple : String -> ReturnType -> (String, String)
+returnToTuple : String -> { decoder : String, encoder : String } -> Maybe (String, String)
 returnToTuple name { decoder, encoder } =
-  (addModuleName name True decoder, addModuleName name False encoder)
+  Just (addModuleName name True decoder, addModuleName name False encoder)
 
 addModuleName name decoder content =
   [ [ "module"
@@ -64,7 +64,7 @@ update msg model =
       , value
         |> Elm.Parser.parse
         |> Result.map (extractType name)
-        |> Result.map (returnToTuple name)
+        |> Result.map (Maybe.andThen (returnToTuple name))
         |> Result.map toJs
         |> Result.withDefault Cmd.none
       )
@@ -84,12 +84,15 @@ extractFromDeclaration : String -> List Declaration.Declaration -> ReturnType
 extractFromDeclaration name declarations =
   let declaration = declarations
                     |> List.concatMap keepAliasDecl
-                    |> findByName name
-      decoderTypeAlias = Maybe.map (aliasDeclDecoderFun name) declaration
-      encoderTypeAlias = Maybe.map (aliasDeclEncoderFun name) declaration in
-  ReturnType
-    (Maybe.withDefault "" decoderTypeAlias)
-    (Maybe.withDefault "" encoderTypeAlias)
+                    |> findByName name in
+  declaration
+  |> Maybe.andThen (createReturnType name)
+
+createReturnType : String -> Alias.TypeAlias -> ReturnType
+createReturnType name declaration =
+  Just { decoder = aliasDeclDecoderFun name declaration
+       , encoder = aliasDeclEncoderFun name declaration
+       }
 
 aliasDeclEncoder : Alias.TypeAlias -> String
 aliasDeclEncoder { name, typeAnnotation } =

@@ -16,9 +16,15 @@ const generatedFilePath = process.argv[4]
 const cwd = process.cwd()
 const completeFilePath = cwd + '/' + filePath
 const completeGeneratedFilePath = cwd + '/' + generatedFilePath
-const filePathGenerateFolder = completeGeneratedFilePath + '/' + name
-const decoderPath = filePathGenerateFolder + '/Decoder.elm'
-const encoderPath = filePathGenerateFolder + '/Encoder.elm'
+
+const pathGenerator = (name) => {
+  const filePathGenerateFolder = completeGeneratedFilePath + '/' + name
+  return {
+    root: filePathGenerateFolder,
+    decoder: filePathGenerateFolder + '/Decoder.elm',
+    encoder: filePathGenerateFolder + '/Encoder.elm'
+  }
+}
 
 const fs = require('fs')
 const readedFile = fs.readFile(completeFilePath, (err, res) => {
@@ -45,16 +51,18 @@ app.ports.toJs.subscribe(decoderAndEncoder => {
   }
   const decoder = decoderAndEncoder[0]
   const encoder = decoderAndEncoder[1]
+  const fileName = decoderAndEncoder[2]
+  const paths = pathGenerator(fileName)
   clearTimeout(timeoutValue)
   if (fs.existsSync(completeGeneratedFilePath)) {
-    if (!fs.existsSync(filePathGenerateFolder)) {
-      fs.mkdirSync(filePathGenerateFolder)
+    if (!fs.existsSync(paths.root)) {
+      fs.mkdirSync(paths.root)
     }
-    fs.writeFileSync(decoderPath, decoder)
-    fs.writeFileSync(encoderPath, encoder)
+    fs.writeFileSync(paths.decoder, decoder)
+    fs.writeFileSync(paths.encoder, encoder)
     try {
-      execSync('elm-format ' + decoderPath + ' --yes')
-      execSync('elm-format ' + encoderPath + ' --yes')
+      execSync('elm-format ' + paths.decoder + ' --yes')
+      execSync('elm-format ' + paths.encoder + ' --yes')
     } catch(error) {
       console.error('Elm Format failed, here\'s why: ', error)
       process.exit(1)

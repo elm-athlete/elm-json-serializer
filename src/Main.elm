@@ -21,6 +21,10 @@ addNameInGeneratedTypes : String -> Model -> Model
 addNameInGeneratedTypes name ({ generatedTypes } as model) =
   { model | generatedTypes = name :: generatedTypes }
 
+addNamesInGeneratedTypes : String -> Model -> Model
+addNamesInGeneratedTypes name model =
+  addNameInGeneratedTypes name model
+
 addParsedFile : Result (List String) RawFile -> Model -> Model
 addParsedFile parsedFile ({ parsedFiles } as model) =
   { model | parsedFiles = parsedFile :: parsedFiles }
@@ -29,8 +33,12 @@ type Msg
   = FromJs (String, String)
   | CompileDependencies (List String)
 
+type alias FileName = String
+type alias Encoder = String
+type alias Decoder = String
+
 port fromJs : ((String, String) -> msg) -> Sub msg
-port toJs : Maybe (String, String) -> Cmd msg
+port toJs : Maybe (Decoder, Encoder, FileName) -> Cmd msg
 port killMePleaseKillMe : Bool -> Cmd msg
 
 type alias ReturnType =
@@ -41,7 +49,10 @@ type alias ReturnTypeInternal =
   , encoder : String
   }
 
-returnToTuple : String -> ReturnTypeInternal -> Maybe ((String, List String), String)
+type alias ReturnTuple =
+  Maybe ((String, List String), String)
+
+returnToTuple : String -> ReturnTypeInternal -> ReturnTuple
 returnToTuple name { decoder, encoder } =
   Just ( Tuple.mapFirst (addModuleName name True) decoder
        , (addModuleName name False) encoder
@@ -97,21 +108,18 @@ init flags =
   (Model [] [], Cmd.none)
 
 update : Msg -> Model -> (Model, Cmd Msg)
-update msg model =
+update msg ({ parsedFiles } as model) =
   case msg of
     FromJs (value, name) ->
       let parsedFile = Elm.Parser.parse value
           resultsDecoded = parsedFile
                            |> Debug.log "after parsing"
-                           |> Result.map (extractType name)
-                           |> Result.map (Maybe.andThen (returnToTuple name)) in
+                           |> compileIfDependency name in
       ( model
         |> addNameInGeneratedTypes name
         |> addParsedFile parsedFile
       , Cmd.batch
-        [ resultsDecoded
-          |> Result.map (Maybe.map (Tuple.mapFirst Tuple.first) >> toJs)
-          |> Result.withDefault Cmd.none
+        [ writeContentToFile name resultsDecoded
         , resultsDecoded
           |> Result.map (Maybe.map (Tuple.first >> Tuple.second))
           |> Result.map (Maybe.map (Task.succeed >> Task.perform CompileDependencies))
@@ -120,13 +128,54 @@ update msg model =
         ]
       )
     CompileDependencies dependencies ->
-      let print = Debug.log "deps" dependencies in
-      ( model
+      let depsAndTemps = List.map (findDependencyInParsedFiles parsedFiles) (Debug.log "thee" dependencies) in
+      ( List.foldr addNamesInGeneratedTypes model dependencies
       , if List.length dependencies == 0 then
           killMePleaseKillMe True
         else
-          Cmd.none
+          depsAndTemps
+          |> List.concatMap Tuple.first
+          |> List.append
+            [ depsAndTemps
+              |> List.concatMap Tuple.second
+              |> List.map (Result.map (Maybe.map (Tuple.first >> Tuple.second)))
+              |> List.map Result.toMaybe
+              |> List.map (Maybe.withDefault Nothing)
+              |> List.map (Maybe.map List.singleton)
+              |> List.concatMap (Maybe.withDefault [])
+              |> List.concat
+              |> (Task.succeed >> Task.perform CompileDependencies)
+            ]
+          |> Cmd.batch
       )
+
+writeContentToFile : String -> Result (List String) ReturnTuple -> Cmd Msg
+writeContentToFile name =
+  Result.withDefault Cmd.none <<
+    Result.map
+      (Maybe.map
+        (Tuple.mapFirst Tuple.first)
+        >> Maybe.andThen (addFileName name)
+        >> toJs
+      )
+
+addFileName : FileName -> (Decoder, Encoder) -> Maybe (Decoder, Encoder, FileName)
+addFileName fileName (decoder, encoder) =
+  Just (decoder, encoder, fileName)
+
+findDependencyInParsedFiles
+   : List (Result (List String) RawFile)
+  -> String
+  -> (List (Cmd Msg), List (Result (List String) ReturnTuple))
+findDependencyInParsedFiles parsedFiles name =
+  let temp = List.map (compileIfDependency name) parsedFiles in
+  (List.map (writeContentToFile name) temp, temp)
+
+compileIfDependency : String -> Result (List String) RawFile -> Result (List String) ReturnTuple
+compileIfDependency name parseFile =
+  parseFile
+  |> Result.map (extractType name)
+  |> Result.map (Maybe.andThen (returnToTuple name))
 
 subscriptions : Model -> Sub Msg
 subscriptions model =

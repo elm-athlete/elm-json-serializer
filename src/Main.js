@@ -14,15 +14,15 @@ const filePath = process.argv[2]
 const name = process.argv[3]
 const generatedFilePath = process.argv[4]
 const cwd = process.cwd()
-const completeFilePath = cwd + '/' + filePath
-const completeGeneratedFilePath = cwd + '/' + generatedFilePath
+const completeFilePath = `${cwd}/${filePath}`
+const completeGeneratedFilePath = `${cwd}/${generatedFilePath}`
 
 const pathGenerator = (name) => {
-  const filePathGenerateFolder = completeGeneratedFilePath + '/' + name
+  const filePathGenerateFolder = `${completeGeneratedFilePath}/${name}`
   return {
     root: filePathGenerateFolder,
-    decoder: filePathGenerateFolder + '/Decoder.elm',
-    encoder: filePathGenerateFolder + '/Encoder.elm'
+    decoder: `${filePathGenerateFolder}/Decoder.elm`,
+    encoder: `${filePathGenerateFolder}/Encoder.elm`
   }
 }
 
@@ -35,18 +35,16 @@ app.ports.killMePleaseKillMe.subscribe(value => {
   process.exit(0)
 })
 
-const timeout = () => {
-  setTimeout(() => {
-    console.error('Timeout, execution took too long to execute. Please, open an issue on GitHub with your use case.')
-    process.exit(1)
-  }, 10000)
-}
+const timeout = () => setTimeout(() => {
+  console.error('Timeout, execution took too long to execute. Please, open an issue on GitHub with your use case.')
+  process.exit(1)
+}, 10000)
 
 let timeoutValue = timeout()
 
 app.ports.toJs.subscribe(decoderAndEncoder => {
   if (decoderAndEncoder === null) {
-    console.error(name, ' has not been found in the file you indicated. Please, check your settings.')
+    console.error(`${name} has not been found in the file you indicated. Please, check your settings.`)
     process.exit(1)
   }
   const decoder = decoderAndEncoder[0]
@@ -61,10 +59,10 @@ app.ports.toJs.subscribe(decoderAndEncoder => {
     fs.writeFileSync(paths.decoder, decoder)
     fs.writeFileSync(paths.encoder, encoder)
     try {
-      execSync('elm-format ' + paths.decoder + ' --yes')
-      execSync('elm-format ' + paths.encoder + ' --yes')
+      execSync(`elm-format ${paths.decoder} --yes`)
+      execSync(`elm-format ${paths.encoder} --yes`)
     } catch(error) {
-      console.error('Elm Format failed, here\'s why: ', error)
+      console.error(`Elm Format failed, here's why: ${error}`)
       process.exit(1)
     }
   }

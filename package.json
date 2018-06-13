@@ -5,5 +5,8 @@
   "license": "MIT",
   "scripts": {
     "start": "/Users/doctor/Downloads/elm make src/Main.elm --output=dist/app.js && node src/Main.js example/Model.elm Model"
+  },
+  "dependencies": {
+    "elm-format": "^0.6.1-alpha"
   }
 }

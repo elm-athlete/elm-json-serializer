@@ -79,3 +79,15 @@ extractRecord annotation =
   case annotation of
     Annotation.Record definition -> Just definition
     _ -> Nothing
+
+surroundByQuotes : String -> String
+surroundByQuotes value =
+  "\"" ++ value ++ "\""
+
+surroundByParen : String -> String
+surroundByParen value =
+  "(" ++ value ++ ")"
+
+andMapFunction : String
+andMapFunction =
+  "map2 (|>)"

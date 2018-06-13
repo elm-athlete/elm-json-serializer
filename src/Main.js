@@ -6,7 +6,7 @@ const { execSync } = require('child_process')
 const commandExists = require('command-exists').sync
 
 if (!commandExists('elm-format')) {
-  console.error('Elm Format is not on your path. Install it please.')
+  console.error('Elm Format is not on your path. Install it before using this software please!')
   process.exit(1)
 }
 

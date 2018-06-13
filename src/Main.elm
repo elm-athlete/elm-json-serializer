@@ -16,6 +16,16 @@ type Msg
   = FromJs (String, String)
 
 port fromJs : ((String, String) -> msg) -> Sub msg
+port toJs : (String, String) -> Cmd msg
+
+type alias ReturnType =
+  { decoder : String
+  , encoder : String
+  }
+
+returnToTuple : ReturnType -> (String, String)
+returnToTuple { decoder, encoder } =
+  (decoder, encoder)
 
 main : Program () Model Msg
 main =
@@ -33,54 +43,65 @@ update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     FromJs (value, type_) ->
-      let print = Debug.log "value" value
-          print_ = value |> Elm.Parser.parse |> Result.map (extractType type_) in
-      (model, Cmd.none)
+      ( model
+      , value
+        |> Elm.Parser.parse
+        |> Result.map (extractType type_)
+        |> Result.map returnToTuple
+        |> Result.map toJs
+        |> Result.withDefault Cmd.none
+      )
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
   fromJs FromJs
 
-extractType : String -> RawFile -> String
+extractType : String -> RawFile -> ReturnType
 extractType type_ rawFile =
   Elm.Processing.process Elm.Processing.init rawFile
   |> .declarations
   |> List.map Tuple.second
   |> extractFromDeclaration type_
 
-extractFromDeclaration : String -> List Declaration.Declaration -> String
+extractFromDeclaration : String -> List Declaration.Declaration -> ReturnType
 extractFromDeclaration type_ declarations =
-  declarations
-  |> List.concatMap keepAliasDecl
-  |> findByName type_
-  |> Maybe.map convertAliasDecl
-  |> Debug.log "file"
-  |> Maybe.withDefault ""
+  let declaration = declarations
+                    |> List.concatMap keepAliasDecl
+                    |> findByName type_
+      decoderTypeAlias = Maybe.map aliasDeclDecoder declaration
+      encoderTypeAlias = Maybe.map aliasDeclEncoder declaration in
+  ReturnType
+    (Maybe.withDefault "" decoderTypeAlias)
+    (Maybe.withDefault "" encoderTypeAlias)
 
-convertAliasDecl : Alias.TypeAlias -> String
-convertAliasDecl { name, typeAnnotation } =
+aliasDeclEncoder : Alias.TypeAlias -> String
+aliasDeclEncoder { name, typeAnnotation } =
+  ""
+
+aliasDeclDecoder : Alias.TypeAlias -> String
+aliasDeclDecoder { name, typeAnnotation } =
   [ String.join " " [ "Decode.succeed", name, "|> andMap " ]
   , typeAnnotation
     |> Tuple.second
-    |> convertTypeAnnotation
+    |> typeAnnotationDecoder
   ]
   |> String.join ""
   |> surroundByParen
 
-convertTypeAnnotation : Annotation.TypeAnnotation -> String
-convertTypeAnnotation typeAnnotation =
+typeAnnotationDecoder : Annotation.TypeAnnotation -> String
+typeAnnotationDecoder typeAnnotation =
   case typeAnnotation of
-    Annotation.Record definition -> convertRecord definition
-    Annotation.GenericType type_ -> convertGenericType type_
-    Annotation.Typed moduleName value annotations -> convertTyped moduleName value annotations
+    Annotation.Record definition -> recordDecoder definition
+    Annotation.GenericType type_ -> genericTypeDecoder type_
+    Annotation.Typed moduleName value annotations -> typedDecoder moduleName value annotations
     -- Annotation.Unit ->
     -- Annotation.Tupled annotations ->
     -- Annotation.GenericRecord name definition ->
     -- Annotation.FunctionTypeAnnotation annotation annotation ->
     _ -> ""
 
-convertGenericType : String -> String
-convertGenericType type_ =
+genericTypeDecoder : String -> String
+genericTypeDecoder type_ =
   case type_ of
     "String" -> "Decode.string"
     "Int" -> "Decode.int"
@@ -88,21 +109,21 @@ convertGenericType type_ =
     "Bool" -> "Decode.bool"
     _ -> ""
 
-convertTyped : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
-convertTyped moduleName type_ annotations =
-  convertGenericType type_
+typedDecoder : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
+typedDecoder moduleName type_ annotations =
+  genericTypeDecoder type_
 
-convertRecord : Annotation.RecordDefinition -> String
-convertRecord definition =
+recordDecoder : Annotation.RecordDefinition -> String
+recordDecoder definition =
   definition
-  |> List.map convertRecordField
+  |> List.map recordFieldDecoder
   |> String.join "|> andMap "
 
-convertRecordField : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
-convertRecordField (name, (_, content)) =
+recordFieldDecoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
+recordFieldDecoder (name, (_, content)) =
   [ "Decode.field"
   , surroundByQuotes name
-  , surroundByParen (convertTypeAnnotation content)
+  , surroundByParen (typeAnnotationDecoder content)
   ]
   |> String.join " "
   |> surroundByParen

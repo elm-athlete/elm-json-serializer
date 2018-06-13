@@ -64,14 +64,14 @@ keepAliasDecl declaration =
     _ -> []
 
 findByName : String -> List Elm.Syntax.TypeAlias.TypeAlias -> Maybe Elm.Syntax.TypeAlias.TypeAlias
-findByName name_ aliases =
+findByName name aliases =
   case aliases of
     [] -> Nothing
     hd :: tl ->
-      if hd.name == name_ then
+      if hd.name == name then
         Just hd
       else
-        findByName name_ tl
+        findByName name tl
 
 extractRecord : Elm.Syntax.TypeAnnotation.TypeAnnotation -> Maybe Elm.Syntax.TypeAnnotation.RecordDefinition
 extractRecord annotation =

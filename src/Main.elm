@@ -64,29 +64,44 @@ extractType type_ rawFile =
   |> extractFromDeclaration type_
 
 extractFromDeclaration : String -> List Declaration.Declaration -> ReturnType
-extractFromDeclaration type_ declarations =
+extractFromDeclaration name declarations =
   let declaration = declarations
                     |> List.concatMap keepAliasDecl
-                    |> findByName type_
-      decoderTypeAlias = Maybe.map aliasDeclDecoder declaration
-      encoderTypeAlias = Maybe.map aliasDeclEncoder declaration in
+                    |> findByName name
+      decoderTypeAlias = Maybe.map (aliasDeclDecoderFun name) declaration
+      encoderTypeAlias = Maybe.map (aliasDeclEncoderFun name) declaration in
   ReturnType
     (Maybe.withDefault "" decoderTypeAlias)
     (Maybe.withDefault "" encoderTypeAlias)
 
 aliasDeclEncoder : Alias.TypeAlias -> String
 aliasDeclEncoder { name, typeAnnotation } =
-  ""
+  [ "Encode.object"
+  , typeAnnotation
+    |> Tuple.second
+    |> typeAnnotationEncoder
+    |> surroundByBrackets
+  ]
+  |> String.join " "
+  |> surroundByParen
+
+aliasDeclEncoderFun : String -> Alias.TypeAlias -> String
+aliasDeclEncoderFun name declaration =
+  camelize name ++ "Encoder record =\n  " ++ aliasDeclEncoder declaration
 
 aliasDeclDecoder : Alias.TypeAlias -> String
 aliasDeclDecoder { name, typeAnnotation } =
-  [ String.join " " [ "Decode.succeed", name, "|> andMap " ]
+  [ String.join " " [ "Decode.succeed", name, "|> andMap" ]
   , typeAnnotation
     |> Tuple.second
     |> typeAnnotationDecoder
   ]
-  |> String.join ""
+  |> String.join " "
   |> surroundByParen
+
+aliasDeclDecoderFun : String -> Alias.TypeAlias -> String
+aliasDeclDecoderFun name declaration =
+  camelize name ++ "Decoder =\n  " ++ aliasDeclDecoder declaration
 
 typeAnnotationDecoder : Annotation.TypeAnnotation -> String
 typeAnnotationDecoder typeAnnotation =
@@ -94,6 +109,18 @@ typeAnnotationDecoder typeAnnotation =
     Annotation.Record definition -> recordDecoder definition
     Annotation.GenericType type_ -> genericTypeDecoder type_
     Annotation.Typed moduleName value annotations -> typedDecoder moduleName value annotations
+    -- Annotation.Unit ->
+    -- Annotation.Tupled annotations ->
+    -- Annotation.GenericRecord name definition ->
+    -- Annotation.FunctionTypeAnnotation annotation annotation ->
+    _ -> ""
+
+typeAnnotationEncoder : Annotation.TypeAnnotation -> String
+typeAnnotationEncoder typeAnnotation =
+  case typeAnnotation of
+    Annotation.Record definition -> recordEncoder definition
+    Annotation.GenericType type_ -> genericTypeEncoder type_
+    Annotation.Typed moduleName value annotations -> typedEncoder moduleName value annotations
     -- Annotation.Unit ->
     -- Annotation.Tupled annotations ->
     -- Annotation.GenericRecord name definition ->
@@ -109,15 +136,34 @@ genericTypeDecoder type_ =
     "Bool" -> "Decode.bool"
     _ -> ""
 
+genericTypeEncoder : String -> String
+genericTypeEncoder type_ =
+  case type_ of
+    "String" -> "Encode.string"
+    "Int" -> "Encode.int"
+    "Float" -> "Encode.float"
+    "Bool" -> "Encode.bool"
+    _ -> ""
+
 typedDecoder : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
 typedDecoder moduleName type_ annotations =
   genericTypeDecoder type_
+
+typedEncoder : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
+typedEncoder moduleName type_ annotations =
+  genericTypeEncoder type_
 
 recordDecoder : Annotation.RecordDefinition -> String
 recordDecoder definition =
   definition
   |> List.map recordFieldDecoder
   |> String.join "|> andMap "
+
+recordEncoder : Annotation.RecordDefinition -> String
+recordEncoder definition =
+  definition
+  |> List.map recordFieldEncoder
+  |> String.join "\n, "
 
 recordFieldDecoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
 recordFieldDecoder (name, (_, content)) =
@@ -126,6 +172,14 @@ recordFieldDecoder (name, (_, content)) =
   , surroundByParen (typeAnnotationDecoder content)
   ]
   |> String.join " "
+  |> surroundByParen
+
+recordFieldEncoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
+recordFieldEncoder (name, (_, content)) =
+  [ surroundByQuotes name
+  , surroundByParen (typeAnnotationEncoder content ++ " record." ++ name)
+  ]
+  |> String.join ", "
   |> surroundByParen
 
 keepAliasDecl : Declaration.Declaration -> List Alias.TypeAlias
@@ -158,6 +212,23 @@ surroundByParen : String -> String
 surroundByParen value =
   "(" ++ value ++ ")"
 
+surroundByBrackets : String -> String
+surroundByBrackets value =
+  "[" ++ value ++ "]"
+
 andMapFunction : String
 andMapFunction =
   "map2 (|>)"
+
+camelize : String -> String
+camelize value =
+  value
+  |> String.toList
+  |> lowercaseFirst
+  |> String.fromList
+
+lowercaseFirst : List Char -> List Char
+lowercaseFirst chars =
+  case chars of
+    [] -> []
+    hd :: tl -> Char.toLower hd :: tl

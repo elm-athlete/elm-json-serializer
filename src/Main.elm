@@ -27,22 +27,42 @@ returnToTuple : String -> { decoder : String, encoder : String } -> Maybe (Strin
 returnToTuple name { decoder, encoder } =
   Just (addModuleName name True decoder, addModuleName name False encoder)
 
+addModuleName : String -> Bool -> String -> String
 addModuleName name decoder content =
-  [ [ "module"
-    , name ++ "." ++ if decoder then "Decoder" else "Encoder"
-    , "exposing"
-    , "(..)"
-    ]
-    |> String.join " "
-  , "\n\n"
-  , [ "import"
-    , if decoder then "Json.Decode as Decode" else "Json.Encode as Encode"
-    ]
-    |> String.join " "
-  , "\n\n"
+  generateFileContent name content <|
+    if decoder then
+      GenerationRequirements
+        "Decoder"
+        "Json.Decode as Decode"
+        andMapFunction
+    else
+      GenerationRequirements
+        "Encoder"
+        "Json.Encode as Encode"
+        ""
+
+type alias GenerationRequirements =
+  { moduleNamespace : String
+  , imported : String
+  , andMap : String
+  }
+
+generateFileContent : String -> String -> GenerationRequirements -> String
+generateFileContent name content { moduleNamespace, imported, andMap } =
+  [ moduleGeneration name moduleNamespace
+  , spaceJoin [ "import", imported ]
+  , andMap
   , content
   ]
-  |> String.join ""
+  |> newlineJoin
+
+moduleGeneration : String -> String -> String
+moduleGeneration name moduleNamespace =
+  [ "module"
+  , String.join "." [ name, moduleNamespace ]
+  , "exposing (..)"
+  ]
+  |> spaceJoin
 
 main : Program () Model Msg
 main =
@@ -102,26 +122,38 @@ aliasDeclEncoder { name, typeAnnotation } =
     |> typeAnnotationEncoder
     |> surroundByBrackets
   ]
-  |> String.join " "
+  |> spaceJoin
   |> surroundByParen
 
 aliasDeclEncoderFun : String -> Alias.TypeAlias -> String
 aliasDeclEncoderFun name declaration =
-  camelize name ++ "Encoder record =\n  " ++ aliasDeclEncoder declaration
+  let functionName = camelize name ++ "Encoder" in
+  [ [ functionName, ":", name, "-> Encode.Value" ]
+  , [ functionName, "record =" ]
+  , [ indent (aliasDeclEncoder declaration) ]
+  ]
+  |> List.map spaceJoin
+  |> newlineJoin
 
 aliasDeclDecoder : Alias.TypeAlias -> String
 aliasDeclDecoder { name, typeAnnotation } =
-  [ String.join " " [ "Decode.succeed", name, "\n|> andMap" ]
+  [ spaceJoin [ "Decode.succeed", name, newline "|> andMap" ]
   , typeAnnotation
     |> Tuple.second
     |> typeAnnotationDecoder
   ]
-  |> String.join " "
+  |> spaceJoin
   |> surroundByParen
 
 aliasDeclDecoderFun : String -> Alias.TypeAlias -> String
 aliasDeclDecoderFun name declaration =
-  camelize name ++ "Decoder =\n  " ++ aliasDeclDecoder declaration
+  let functionName = camelize name ++ "Decoder" in
+  [ [ functionName, ": Decoder", name ]
+  , [ functionName, "=" ]
+  , [ indent (aliasDeclDecoder declaration) ]
+  ]
+  |> List.map spaceJoin
+  |> newlineJoin
 
 typeAnnotationDecoder : Annotation.TypeAnnotation -> String
 typeAnnotationDecoder typeAnnotation =
@@ -191,7 +223,7 @@ recordFieldDecoder (name, (_, content)) =
   , surroundByQuotes name
   , surroundByParen (typeAnnotationDecoder content)
   ]
-  |> String.join " "
+  |> spaceJoin
   |> surroundByParen
 
 recordFieldEncoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
@@ -238,7 +270,10 @@ surroundByBrackets value =
 
 andMapFunction : String
 andMapFunction =
-  "map2 (|>)"
+  [ "andMap : Decoder a -> Decoder (a -> b) -> Decoder b"
+  , "andMap = Decode.map2 (|>)"
+  ]
+  |> newlineJoin
 
 camelize : String -> String
 camelize value =
@@ -250,5 +285,17 @@ camelize value =
 lowercaseFirst : List Char -> List Char
 lowercaseFirst chars =
   case chars of
-    [] -> []
     hd :: tl -> Char.toLower hd :: tl
+    [] -> []
+
+indent : String -> String
+indent = (++) " "
+
+spaceJoin : List String -> String
+spaceJoin = String.join " "
+
+newlineJoin : List String -> String
+newlineJoin = String.join "\n"
+
+newline : String -> String
+newline = (++) "\n"

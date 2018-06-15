@@ -254,7 +254,6 @@ encloseInDecoderFunction name decoder =
   |> List.map String.spaceJoin
   |> String.newlineJoin
 
-
 typeAnnotationDecoder : Annotation.TypeAnnotation -> (String, List String)
 typeAnnotationDecoder typeAnnotation =
   case typeAnnotation of

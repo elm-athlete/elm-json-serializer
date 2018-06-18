@@ -26,11 +26,18 @@ const pathGenerator = (name) => {
   }
 }
 
+// Read the first file.
 const fs = require('fs')
-const readedFile = fs.readFile(completeFilePath, (err, res) => {
-  app.ports.fromJs.send([ res.toString(), name ])
+fs.readFile(completeFilePath, (err, res) => {
+  app.ports.fileContentRead.send([ res.toString(), name ])
 })
 
+app.ports.theresAnErrorDude.subscribe(value => {
+  console.error(value)
+  process.exit(1)
+})
+
+// Exit the app when asked.
 app.ports.killMePleaseKillMe.subscribe(value => {
   process.exit(0)
 })
@@ -42,7 +49,8 @@ const timeout = () => setTimeout(() => {
 
 let timeoutValue = timeout()
 
-app.ports.toJs.subscribe(decoderAndEncoder => {
+// Write files when elm send them.
+app.ports.writeFile.subscribe(decoderAndEncoder => {
   if (decoderAndEncoder === null) {
     console.error(`${name} has not been found in the file you indicated. Please, check your settings.`)
     process.exit(1)

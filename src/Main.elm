@@ -1,5 +1,6 @@
 port module Main exposing (..)
 
+import Dict exposing (Dict)
 import Task exposing (Task)
 import Json.Decode as Decode
 import Elm.Parser
@@ -9,54 +10,208 @@ import Elm.Syntax.Range as Range
 import Elm.Syntax.Declaration as Declaration
 import Elm.Syntax.TypeAlias as Alias
 import Elm.Syntax.TypeAnnotation as Annotation
+import Elm.Syntax.Type as Type
 
 import String.Extra as String
+import Aliases exposing (..)
+import Generator.Decoder
 
 type alias Model =
-  { generatedTypes : List String
-  , parsedFiles : List (Result (List String) RawFile)
+  { typesToGenerate : List (ModuleName, String)
+  , rawFiles : Dict ModuleName RawFile
+  , filesContent : Dict ModuleName DecodersEncoders
   }
 
-addNameInGeneratedTypes : String -> Model -> Model
-addNameInGeneratedTypes name ({ generatedTypes } as model) =
-  { model | generatedTypes = name :: generatedTypes }
+addTypeNameToGenerate : (ModuleName, String) -> Model -> Model
+addTypeNameToGenerate typeName ({ typesToGenerate } as model) =
+  { model | typesToGenerate = typeName :: typesToGenerate }
 
-addNamesInGeneratedTypes : String -> Model -> Model
-addNamesInGeneratedTypes name model =
-  addNameInGeneratedTypes name model
-
-addParsedFile : Result (List String) RawFile -> Model -> Model
-addParsedFile parsedFile ({ parsedFiles } as model) =
-  { model | parsedFiles = parsedFile :: parsedFiles }
+addRawFile : ModuleName -> RawFile -> Model -> Model
+addRawFile moduleName rawFile ({ rawFiles } as model) =
+  { model | rawFiles = Dict.insert moduleName rawFile rawFiles }
 
 type Msg
-  = FromJs (String, String)
-  | CompileDependencies (List String)
+  = FileContentRead (String, String)
+  -- | CompileDependencies (List String)
+  | GenerateDecodersEncoders
+  | SendErrorMessage String
 
-type alias FileName = String
-type alias Encoder = String
-type alias Decoder = String
-
-port fromJs : ((String, String) -> msg) -> Sub msg
-port toJs : Maybe (Decoder, Encoder, FileName) -> Cmd msg
+port fileContentRead : ((FileContent, TypeName) -> msg) -> Sub msg
+port writeFile : (Decoder, Encoder, FileName) -> Cmd msg
 port killMePleaseKillMe : Bool -> Cmd msg
+port theresAnErrorDude : String -> Cmd msg
 
-type alias ReturnType =
-  Maybe ReturnTypeInternal
+main : Program () Model Msg
+main =
+  Platform.worker
+    { init = init
+    , update = update
+    , subscriptions = subscriptions
+    }
 
-type alias ReturnTypeInternal =
-  { decoder : (String, List String)
+init : () -> (Model, Cmd Msg)
+init flags =
+  (Model [] Dict.empty Dict.empty, Cmd.none)
+
+updateAndThen : Msg -> (Model, Cmd Msg) -> (Model, Cmd Msg)
+updateAndThen msg (model, cmd) =
+  let (newModel, newCmd) = update msg model in
+  (newModel, Cmd.batch [ newCmd, cmd ])
+
+sendErrorMessage : String -> (Model, Cmd Msg) -> (Model, Cmd Msg)
+sendErrorMessage error = updateAndThen (SendErrorMessage error)
+
+update : Msg -> Model -> (Model, Cmd Msg)
+update msg ({ rawFiles, typesToGenerate, filesContent } as model) =
+  case msg of
+    SendErrorMessage error -> (model, theresAnErrorDude error)
+    GenerateDecodersEncoders ->
+      case List.head typesToGenerate of
+        Nothing -> (model, Cmd.batch (writeFiles filesContent))
+        Just (moduleName, typeName) ->
+          updateAndThen GenerateDecodersEncoders <|
+            generateDecodersAndEncoders moduleName typeName model
+    FileContentRead (value, name) ->
+      updateAndThen GenerateDecodersEncoders <|
+        parseFileAndStoreContent value name model
+    -- CompileDependencies dependencies ->
+    --   let depsAndTemps = List.map (findDependencyInParsedFiles parsedFiles) (Debug.log "thee" dependencies) in
+    --   ( List.foldr addNamesToGenerate model dependencies
+    --   , if List.length dependencies == 0 then
+    --       killMePleaseKillMe True
+    --     else
+    --       depsAndTemps
+    --       |> List.concatMap Tuple.first
+    --       |> List.append
+    --         [ depsAndTemps
+    --           |> List.concatMap Tuple.second
+    --           |> List.map (Result.map (Maybe.map (Tuple.first >> Tuple.second)))
+    --           |> List.map Result.toMaybe
+    --           |> List.map (Maybe.withDefault Nothing)
+    --           |> List.map (Maybe.map List.singleton)
+    --           |> List.concatMap (Maybe.withDefault [])
+    --           |> List.concat
+    --           |> (Task.succeed >> Task.perform CompileDependencies)
+    --         ]
+    --       |> Cmd.batch
+    --   )
+
+writeFiles : Dict ModuleName DecodersEncoders -> List (Cmd Msg)
+writeFiles filesContent =
+  filesContent
+  |> Dict.toList
+  |> List.map writeFileContent
+
+writeFileContent : (String, DecodersEncoders) -> Cmd Msg
+writeFileContent (moduleName, { decoders, encoders }) =
+  writeFile (String.join "\n" decoders, String.join "\n" encoders, moduleName)
+
+parseFileAndStoreContent : String -> String -> Model -> (Model, Cmd Msg)
+parseFileAndStoreContent value name model =
+  let parsedFile = Elm.Parser.parse value in
+  case parsedFile of
+    Err errors -> (model, Cmd.none)
+    Ok rawFile ->
+      let moduleName = Elm.RawFile.moduleName rawFile in
+      case moduleName of
+        Nothing -> (model, killMePleaseKillMe True)
+        Just moduleName_ ->
+          let joinedModuleName = String.join "." moduleName_ in
+          ( model
+            |> addTypeNameToGenerate (joinedModuleName, name)
+            |> addRawFile joinedModuleName rawFile
+          , Cmd.none
+          )
+
+generateDecodersAndEncoders : ModuleName -> TypeName -> Model -> (Model, Cmd Msg)
+generateDecodersAndEncoders moduleName typeName ({ rawFiles, typesToGenerate, filesContent } as model) =
+  case Dict.get moduleName rawFiles of
+    Nothing -> sendErrorMessage "NoFile, what happened?" (model, Cmd.none)
+    Just rawFile ->
+      ( rawFile
+        |> extractType typeName
+        |> Maybe.andThen generateDecodersEncodersAndDeps
+        |> Maybe.map (storeDecodersEncodersAndDepsIn model moduleName)
+        |> Maybe.withDefault model
+      , Cmd.none
+      )
+
+storeDecodersEncodersAndDepsIn : Model -> ModuleName -> DecodersEncodersDeps -> Model
+storeDecodersEncodersAndDepsIn ({ typesToGenerate, filesContent } as model) moduleName { decoder, encoder, decoderDeps } =
+  let { encoders, decoders } = filesContent
+                               |> Dict.get moduleName
+                               |> Maybe.withDefault { encoders = [], decoders = [] } in
+  { model
+    | filesContent = Dict.insert moduleName
+      { decoders = List.append decoders [ decoder ]
+      , encoders = List.append encoders [ encoder ]
+      } filesContent
+    , typesToGenerate = List.append (List.map (\a -> ("", a)) decoderDeps) (Maybe.withDefault [] (List.tail typesToGenerate))
+  }
+
+extractType : String -> RawFile -> Maybe Declaration.Declaration
+extractType name rawFile =
+  Elm.Processing.process Elm.Processing.init rawFile
+  |> .declarations
+  |> List.map Tuple.second
+  |> List.filter isAliasOrType
+  |> findDeclarationByName name
+
+isAliasOrType : Declaration.Declaration -> Bool
+isAliasOrType declaration =
+  case declaration of
+    Declaration.AliasDecl decl -> True
+    Declaration.TypeDecl decl -> True
+    _ -> False
+
+findDeclarationByName : String -> List Declaration.Declaration -> Maybe Declaration.Declaration
+findDeclarationByName name declarations =
+  case declarations of
+    Declaration.AliasDecl decl :: tl ->
+      if decl.name == name then
+        Just (Declaration.AliasDecl decl)
+      else
+        findDeclarationByName name tl
+    Declaration.TypeDecl decl :: tl ->
+      if decl.name == name then
+        Just (Declaration.TypeDecl decl)
+      else
+        findDeclarationByName name tl
+    _ :: tl ->
+      findDeclarationByName name tl
+    [] ->
+      Nothing
+
+generateDecodersEncodersAndDeps : Declaration.Declaration -> Maybe DecodersEncodersDeps
+generateDecodersEncodersAndDeps declaration =
+  case declaration of
+    Declaration.AliasDecl decl ->
+      let (decoder, deps) = Generator.Decoder.generateAliasDecoderAndDeps decl in
+      Just { decoder = decoder
+           , encoder = aliasDeclEncoderFun decl.name decl
+           , decoderDeps = deps
+           }
+    Declaration.TypeDecl decl ->
+      Nothing
+    _ ->
+      Nothing
+
+type alias DecodersEncoders =
+  { decoders : List String
+  , encoders : List String
+  }
+
+type alias DecodersEncodersDeps =
+  DecodersEncodersDepsInternal
+
+type alias DecodersEncodersDepsInternal =
+  { decoder : String
   , encoder : String
+  , decoderDeps : List String
   }
 
 type alias ReturnTuple =
   Maybe ((String, List String), String)
-
-returnToTuple : String -> ReturnTypeInternal -> ReturnTuple
-returnToTuple name { decoder, encoder } =
-  Just ( Tuple.mapFirst (addModuleName name True) decoder
-       , (addModuleName name False) encoder
-       )
 
 addModuleName : String -> Bool -> String -> String
 addModuleName name decoder content =
@@ -95,111 +250,13 @@ moduleGeneration name moduleNamespace =
   ]
   |> String.spaceJoin
 
-main : Program () Model Msg
-main =
-  Platform.worker
-    { init = init
-    , update = update
-    , subscriptions = subscriptions
-    }
-
-init : () -> (Model, Cmd Msg)
-init flags =
-  (Model [] [], Cmd.none)
-
-update : Msg -> Model -> (Model, Cmd Msg)
-update msg ({ parsedFiles } as model) =
-  case msg of
-    FromJs (value, name) ->
-      let parsedFile = Elm.Parser.parse value
-          resultsDecoded = parsedFile
-                           |> Debug.log "after parsing"
-                           |> compileIfDependency name in
-      ( model
-        |> addNameInGeneratedTypes name
-        |> addParsedFile parsedFile
-      , Cmd.batch
-        [ writeContentToFile name resultsDecoded
-        , resultsDecoded
-          |> Result.map (Maybe.map (Tuple.first >> Tuple.second))
-          |> Result.map (Maybe.map (Task.succeed >> Task.perform CompileDependencies))
-          |> Result.map (Maybe.withDefault Cmd.none)
-          |> Result.withDefault Cmd.none
-        ]
-      )
-    CompileDependencies dependencies ->
-      let depsAndTemps = List.map (findDependencyInParsedFiles parsedFiles) (Debug.log "thee" dependencies) in
-      ( List.foldr addNamesInGeneratedTypes model dependencies
-      , if List.length dependencies == 0 then
-          killMePleaseKillMe True
-        else
-          depsAndTemps
-          |> List.concatMap Tuple.first
-          |> List.append
-            [ depsAndTemps
-              |> List.concatMap Tuple.second
-              |> List.map (Result.map (Maybe.map (Tuple.first >> Tuple.second)))
-              |> List.map Result.toMaybe
-              |> List.map (Maybe.withDefault Nothing)
-              |> List.map (Maybe.map List.singleton)
-              |> List.concatMap (Maybe.withDefault [])
-              |> List.concat
-              |> (Task.succeed >> Task.perform CompileDependencies)
-            ]
-          |> Cmd.batch
-      )
-
-writeContentToFile : String -> Result (List String) ReturnTuple -> Cmd Msg
-writeContentToFile name =
-  Result.withDefault Cmd.none <<
-    Result.map
-      (Maybe.map
-        (Tuple.mapFirst Tuple.first)
-        >> Maybe.andThen (addFileName name)
-        >> toJs
-      )
-
 addFileName : FileName -> (Decoder, Encoder) -> Maybe (Decoder, Encoder, FileName)
 addFileName fileName (decoder, encoder) =
   Just (decoder, encoder, fileName)
 
-findDependencyInParsedFiles
-   : List (Result (List String) RawFile)
-  -> String
-  -> (List (Cmd Msg), List (Result (List String) ReturnTuple))
-findDependencyInParsedFiles parsedFiles name =
-  let temp = List.map (compileIfDependency name) parsedFiles in
-  (List.map (writeContentToFile name) temp, temp)
-
-compileIfDependency : String -> Result (List String) RawFile -> Result (List String) ReturnTuple
-compileIfDependency name parseFile =
-  parseFile
-  |> Result.map (extractType name)
-  |> Result.map (Maybe.andThen (returnToTuple name))
-
 subscriptions : Model -> Sub Msg
 subscriptions model =
-  fromJs FromJs
-
-extractType : String -> RawFile -> ReturnType
-extractType name rawFile =
-  Elm.Processing.process Elm.Processing.init rawFile
-  |> .declarations
-  |> List.map Tuple.second
-  |> extractFromDeclaration name
-
-extractFromDeclaration : String -> List Declaration.Declaration -> ReturnType
-extractFromDeclaration name declarations =
-  let declaration = declarations
-                    |> List.concatMap keepAliasDecl
-                    |> findByName name in
-  Maybe.andThen (createReturnType name) declaration
-
-createReturnType : String -> Alias.TypeAlias -> ReturnType
-createReturnType name declaration =
-  Just { decoder = aliasDeclDecoderFun name declaration
-       , encoder = aliasDeclEncoderFun name declaration
-       }
+  fileContentRead FileContentRead
 
 aliasDeclEncoder : Alias.TypeAlias -> String
 aliasDeclEncoder { name, typeAnnotation } =
@@ -222,50 +279,6 @@ aliasDeclEncoderFun name declaration =
   |> List.map String.spaceJoin
   |> String.newlineJoin
 
-aliasDeclDecoder : Alias.TypeAlias -> (String, List String)
-aliasDeclDecoder { name, typeAnnotation } =
-  typeAnnotation
-  |> Tuple.second
-  |> typeAnnotationDecoder
-  |> Tuple.mapFirst (addDecoderStructure name)
-
-addDecoderStructure : String -> String -> String
-addDecoderStructure name decoder =
-  [ [ "Decode.succeed", name, String.newline "|> andMap" ]
-  , [ decoder ]
-  ]
-  |> List.map String.spaceJoin
-  |> String.spaceJoin
-  |> String.surroundByParen
-
-aliasDeclDecoderFun : String -> Alias.TypeAlias -> (String, List String)
-aliasDeclDecoderFun name declaration =
-  let decoderAndDeps = aliasDeclDecoder declaration in
-  decoderAndDeps
-  |> Tuple.mapFirst (encloseInDecoderFunction name)
-
-encloseInDecoderFunction : String -> String -> String
-encloseInDecoderFunction name decoder =
-  let functionName = String.camelize name ++ "Decoder"in
-  [ [ functionName, ": Decoder", name ]
-  , [ functionName, "=" ]
-  , [ String.indent decoder ]
-  ]
-  |> List.map String.spaceJoin
-  |> String.newlineJoin
-
-typeAnnotationDecoder : Annotation.TypeAnnotation -> (String, List String)
-typeAnnotationDecoder typeAnnotation =
-  case typeAnnotation of
-    Annotation.Record definition -> recordDecoder definition
-    Annotation.GenericType type_ -> genericTypeDecoder type_
-    Annotation.Typed moduleName value annotations -> typedDecoder moduleName value annotations
-    -- Annotation.Unit ->
-    -- Annotation.Tupled annotations ->
-    -- Annotation.GenericRecord name definition ->
-    -- Annotation.FunctionTypeAnnotation annotation annotation ->
-    _ -> ("", [])
-
 typeAnnotationEncoder : Annotation.TypeAnnotation -> String
 typeAnnotationEncoder typeAnnotation =
   case typeAnnotation of
@@ -278,15 +291,6 @@ typeAnnotationEncoder typeAnnotation =
     -- Annotation.FunctionTypeAnnotation annotation annotation ->
     _ -> ""
 
-genericTypeDecoder : String -> (String, List String)
-genericTypeDecoder type_ =
-  case type_ of
-    "String" -> ("Decode.string", [])
-    "Int" -> ("Decode.int", [])
-    "Float" -> ("Decode.float", [])
-    "Bool" -> ("Decode.bool", [])
-    value -> ("decode" ++ value, [ value ])
-
 genericTypeEncoder : String -> String
 genericTypeEncoder type_ =
   case type_ of
@@ -296,52 +300,15 @@ genericTypeEncoder type_ =
     "Bool" -> "Encode.bool"
     value -> "encode" ++ value
 
-typedDecoder : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> (String, List String)
-typedDecoder moduleName type_ annotations =
-  genericTypeDecoder type_
-
 typedEncoder : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
 typedEncoder moduleName type_ annotations =
   genericTypeEncoder type_
-
-recordDecoder : Annotation.RecordDefinition -> (String, List String)
-recordDecoder definition =
-  definition
-  |> List.map recordFieldDecoder
-  |> flattenTuples
-  |> Tuple.mapFirst (String.join "|> andMap ")
-
-flattenTuples : List (String, List String) -> (List String, List String)
-flattenTuples =
-  List.foldr concatDecoderFieldsAndKeepDeps ([], [])
-
-concatDecoderFieldsAndKeepDeps
-   : (String, List String)
-  -> (List String, List String)
-  -> (List String, List String)
-concatDecoderFieldsAndKeepDeps (content, deps) (accDecoder, accDeps) =
-  (content :: accDecoder, accDeps ++ deps)
 
 recordEncoder : Annotation.RecordDefinition -> String
 recordEncoder definition =
   definition
   |> List.map recordFieldEncoder
   |> String.join "\n, "
-
-recordFieldDecoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> (String, List String)
-recordFieldDecoder (name, (_, content)) =
-  content
-  |> typeAnnotationDecoder
-  |> Tuple.mapFirst (recordFieldDecoderString name)
-
-recordFieldDecoderString : String -> String -> String
-recordFieldDecoderString name decoder =
-    [ "Decode.field"
-    , String.surroundByQuotes name
-    , String.surroundByParen decoder
-    ]
-    |> String.spaceJoin
-    |> String.surroundByParen
 
 recordFieldEncoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> String
 recordFieldEncoder (name, (_, content)) =
@@ -350,22 +317,6 @@ recordFieldEncoder (name, (_, content)) =
   ]
   |> String.join ", "
   |> String.surroundByParen
-
-keepAliasDecl : Declaration.Declaration -> List Alias.TypeAlias
-keepAliasDecl declaration =
-  case declaration of
-    Declaration.AliasDecl decl -> List.singleton decl
-    _ -> []
-
-findByName : String -> List Alias.TypeAlias -> Maybe Alias.TypeAlias
-findByName name aliases =
-  case aliases of
-    [] -> Nothing
-    hd :: tl ->
-      if hd.name == name then
-        Just hd
-      else
-        findByName name tl
 
 extractRecord : Annotation.TypeAnnotation -> Maybe Annotation.RecordDefinition
 extractRecord annotation =

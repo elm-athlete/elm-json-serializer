@@ -3,23 +3,28 @@ module Generator.Module exposing (..)
 import String.Extra as String
 import Aliases exposing (..)
 
-addModuleName : String -> Bool -> String -> String
+type DecoderEncoder
+  = Decoder
+  | Encoder
+
+addModuleName : String -> DecoderEncoder -> String -> String
 addModuleName name decoder content =
   generateFileContent name content <|
-    if decoder then
-      GenerationRequirements
-        "Decoder"
-        "Json.Decode as Decode"
-        ([ andMapFunction
-         , tupleThreeFunction
-         , tupleFourFunction
-         ]
-         |> String.newlineJoin)
-    else
-      GenerationRequirements
-        "Encoder"
-        "Json.Encode as Encode"
-        ""
+    case decoder of
+      Decoder ->
+        GenerationRequirements
+          "Decoder"
+          "Json.Decode as Decode"
+          ([ andMapFunction
+           , tupleThreeFunction
+           , tupleFourFunction
+           ]
+           |> String.newlineJoin)
+      Encoder ->
+        GenerationRequirements
+          "Encoder"
+          "Json.Encode as Encode"
+          ""
 
 type alias GenerationRequirements =
   { moduleNamespace : String

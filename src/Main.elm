@@ -119,11 +119,11 @@ writeFileContent : (String, DecodersEncoders) -> Cmd Msg
 writeFileContent (moduleName, { decoders, encoders }) =
   writeFile
     ( decoders
-      |> String.join "\n"
-      |> Generator.Module.addModuleName moduleName True
+      |> String.newlineJoin
+      |> Generator.Module.addModuleName moduleName Generator.Module.Decoder
     , encoders
-      |> String.join "\n"
-      |> Generator.Module.addModuleName moduleName False
+      |> String.newlineJoin
+      |> Generator.Module.addModuleName moduleName Generator.Module.Encoder
     , moduleName
     )
 

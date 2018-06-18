@@ -82,8 +82,7 @@ update msg ({ rawFiles, typesToGenerate, filesContent } as model) =
       case List.head typesToGenerate of
         Nothing -> (model, writeGeneratedFiles filesContent)
         Just (moduleName, typeName) ->
-          updateAndThen GenerateDecodersEncoders <|
-            generateDecodersAndEncoders moduleName typeName model
+          generateDecodersAndEncoders moduleName typeName model
     FileContentRead (value, name) ->
       updateAndThen GenerateDecodersEncoders <|
         parseFileAndStoreContent value name model
@@ -134,7 +133,7 @@ parseFileAndStoreContent value name model =
   case parsedFile of
     Err errors -> (model, Cmd.none)
     Ok rawFile ->
-      let moduleName = Elm.RawFile.moduleName (Debug.log "rawfile" rawFile) in
+      let moduleName = Elm.RawFile.moduleName rawFile in
       case moduleName of
         Nothing -> (model, killMePleaseKillMe True)
         Just moduleName_ ->
@@ -150,13 +149,14 @@ generateDecodersAndEncoders moduleName typeName ({ rawFiles, typesToGenerate, fi
   case Dict.get moduleName rawFiles of
     Nothing -> sendErrorMessage "NoFile, what happened?" (model, Cmd.none)
     Just rawFile ->
-      ( rawFile
-        |> extractType typeName
-        |> Maybe.andThen generateDecodersEncodersAndDeps
-        |> Maybe.map (storeDecodersEncodersAndDepsIn model moduleName)
-        |> Maybe.withDefault model
-      , Cmd.none
-      )
+      updateAndThen GenerateDecodersEncoders <|
+        ( rawFile
+          |> extractType typeName
+          |> Maybe.andThen generateDecodersEncodersAndDeps
+          |> Maybe.map (storeDecodersEncodersAndDepsIn model moduleName)
+          |> Maybe.withDefault model
+        , Cmd.none
+        )
 
 storeDecodersEncodersAndDepsIn : Model -> ModuleName -> DecodersEncodersDeps -> Model
 storeDecodersEncodersAndDepsIn ({ typesToGenerate, filesContent } as model) moduleName { decoder, encoder, decoderDeps } =

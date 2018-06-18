@@ -17,16 +17,16 @@ aliasDeclDecoderAndDeps { name, typeAnnotation } =
   typeAnnotation
   |> Tuple.second
   |> typeAnnotationDecoder
-  |> Tuple.mapFirst (addDecoderStructure name)
+  |> Tuple.mapFirst (addDecoderPipelineStructure name)
 
 typeAnnotationDecoder : Annotation.TypeAnnotation -> (String, List (ModuleName, String))
 typeAnnotationDecoder typeAnnotation =
   case typeAnnotation of
     Annotation.Record definition -> recordDecoder definition
-    Annotation.GenericType type_ -> genericTypeDecoder type_
+    Annotation.GenericType type_ -> (genericTypeDecoder type_, [])
     Annotation.Typed moduleName value annotations -> typedDecoder moduleName value annotations
     -- Annotation.Unit ->
-    -- Annotation.Tupled annotations ->
+    Annotation.Tupled annotations -> tupledDecoder annotations
     -- Annotation.GenericRecord name definition ->
     -- Annotation.FunctionTypeAnnotation annotation annotation ->
     _ -> ("", [])
@@ -38,7 +38,9 @@ recordDecoder definition =
   |> flattenTuples
   |> Tuple.mapFirst (String.join "|> andMap ")
 
-recordFieldDecoder : (String, (Range.Range, Annotation.TypeAnnotation)) -> (String, List (ModuleName, String))
+recordFieldDecoder
+   : (String, (Range.Range, Annotation.TypeAnnotation))
+  -> (String, List (ModuleName, String))
 recordFieldDecoder (name, (_, content)) =
   content
   |> typeAnnotationDecoder
@@ -63,21 +65,64 @@ concatDecoderFieldsAndKeepDeps
 concatDecoderFieldsAndKeepDeps (content, deps) (accDecoder, accDeps) =
   (content :: accDecoder, accDeps ++ deps)
 
-genericTypeDecoder : String -> (String, List (ModuleName, String))
+genericTypeDecoder : String -> String
 genericTypeDecoder type_ =
   case type_ of
-    "String" -> ("Decode.string", [])
-    "Int" -> ("Decode.int", [])
-    "Float" -> ("Decode.float", [])
-    "Bool" -> ("Decode.bool", [])
-    value -> ("decode" ++ value, [ ("", value) ])
+    "String" -> "Decode.string"
+    "Int" -> "Decode.int"
+    "Float" -> "Decode.float"
+    "Bool" -> "Decode.bool"
+    value -> "decode" ++ value
 
-typedDecoder : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> (String, List (ModuleName, String))
+typedDecoder
+   : List String
+  -> String
+  -> List (Range.Range, Annotation.TypeAnnotation)
+  -> (String, List (ModuleName, String))
 typedDecoder moduleName type_ annotations =
-  genericTypeDecoder type_
+  (genericTypeDecoder type_, dependencyIfNotGenericType moduleName type_)
 
-addDecoderStructure : String -> String -> String
-addDecoderStructure name decoder =
+dependencyIfNotGenericType moduleName type_ =
+  case type_ of
+    "String" -> []
+    "Int" -> []
+    "Float" -> []
+    "Bool" -> []
+    value -> [ (String.join "." moduleName, type_) ]
+
+tupledDecoder : List (Range.Range, Annotation.TypeAnnotation) -> (String, List (ModuleName, String))
+tupledDecoder annotations =
+  annotations
+  |> List.map Tuple.second
+  |> List.map typeAnnotationDecoder
+  |> flattenTuples
+  |> Tuple.mapFirst (List.indexedMap tupleFieldDecoder)
+  |> Tuple.mapFirst (String.join "\n ")
+  |> Tuple.mapFirst (addTupleMapper annotations)
+
+tupleFieldDecoder : Int -> String -> String
+tupleFieldDecoder index value =
+  [ "Decode.field"
+  , index
+    |> String.fromInt
+    |> String.surroundByQuotes
+  , value
+  ]
+  |> String.spaceJoin
+  |> String.surroundByParen
+
+addTupleMapper : List annotations -> String -> String
+addTupleMapper annotations =
+  String.append
+    (case List.length annotations of
+      2 -> "Decode.map Tuple.pair"
+      3 -> "Decode.map tupleThree"
+      4 -> "Decode.map tupleFour"
+      _ -> "We should add more cases here..."
+    )
+
+addDecoderPipelineStructure : String -> String -> String
+addDecoderPipelineStructure name decoder =
   [ [ "Decode.succeed", name, String.newline "|> andMap" ]
   , [ decoder ]
   ]

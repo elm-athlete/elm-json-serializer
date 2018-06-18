@@ -7,19 +7,19 @@ import Elm.Syntax.Range as Range
 import String.Extra as String
 import Aliases exposing (..)
 
-generateAliasDecoderAndDeps : Alias.TypeAlias -> (String, List (ModuleName, String))
+generateAliasDecoderAndDeps : Alias.TypeAlias -> (String, List (Dependency, String))
 generateAliasDecoderAndDeps declaration =
   let decoderAndDeps = aliasDeclDecoderAndDeps declaration in
   Tuple.mapFirst (encloseInDecoderFunction declaration.name) decoderAndDeps
 
-aliasDeclDecoderAndDeps : Alias.TypeAlias -> (String, List (ModuleName, String))
+aliasDeclDecoderAndDeps : Alias.TypeAlias -> (String, List (Dependency, String))
 aliasDeclDecoderAndDeps { name, typeAnnotation } =
   typeAnnotation
   |> Tuple.second
   |> typeAnnotationDecoder
   |> Tuple.mapFirst (addDecoderPipelineStructure name)
 
-typeAnnotationDecoder : Annotation.TypeAnnotation -> (String, List (ModuleName, String))
+typeAnnotationDecoder : Annotation.TypeAnnotation -> (String, List (Dependency, String))
 typeAnnotationDecoder typeAnnotation =
   case typeAnnotation of
     Annotation.Record definition -> recordDecoder definition
@@ -31,7 +31,7 @@ typeAnnotationDecoder typeAnnotation =
     -- Annotation.FunctionTypeAnnotation annotation annotation ->
     _ -> ("", [])
 
-recordDecoder : Annotation.RecordDefinition -> (String, List (ModuleName, String))
+recordDecoder : Annotation.RecordDefinition -> (String, List (Dependency, String))
 recordDecoder definition =
   definition
   |> List.map recordFieldDecoder
@@ -40,7 +40,7 @@ recordDecoder definition =
 
 recordFieldDecoder
    : (String, (Range.Range, Annotation.TypeAnnotation))
-  -> (String, List (ModuleName, String))
+  -> (String, List (Dependency, String))
 recordFieldDecoder (name, (_, content)) =
   content
   |> typeAnnotationDecoder
@@ -55,13 +55,13 @@ recordFieldDecoderString name decoder =
     |> String.spaceJoin
     |> String.surroundByParen
 
-flattenTuples : List (String, List (ModuleName, String)) -> (List String, List (ModuleName, String))
+flattenTuples : List (String, List (Dependency, String)) -> (List String, List (Dependency, String))
 flattenTuples = List.foldr concatDecoderFieldsAndKeepDeps ([], [])
 
 concatDecoderFieldsAndKeepDeps
-   : (String, List (ModuleName, String))
-  -> (List String, List (ModuleName, String))
-  -> (List String, List (ModuleName, String))
+   : (String, List (Dependency, String))
+  -> (List String, List (Dependency, String))
+  -> (List String, List (Dependency, String))
 concatDecoderFieldsAndKeepDeps (content, deps) (accDecoder, accDeps) =
   (content :: accDecoder, accDeps ++ deps)
 
@@ -78,7 +78,7 @@ typedDecoder
    : List String
   -> String
   -> List (Range.Range, Annotation.TypeAnnotation)
-  -> (String, List (ModuleName, String))
+  -> (String, List (Dependency, String))
 typedDecoder moduleName type_ annotations =
   (genericTypeDecoder type_, dependencyIfNotGenericType moduleName type_)
 
@@ -88,9 +88,9 @@ dependencyIfNotGenericType moduleName type_ =
     "Int" -> []
     "Float" -> []
     "Bool" -> []
-    value -> [ (String.join "." moduleName, type_) ]
+    value -> [ (InModule (String.join "." moduleName), type_) ]
 
-tupledDecoder : List (Range.Range, Annotation.TypeAnnotation) -> (String, List (ModuleName, String))
+tupledDecoder : List (Range.Range, Annotation.TypeAnnotation) -> (String, List (Dependency, String))
 tupledDecoder annotations =
   annotations
   |> List.map Tuple.second

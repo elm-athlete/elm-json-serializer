@@ -11,6 +11,8 @@ import Elm.Syntax.Declaration as Declaration
 import Elm.Syntax.TypeAlias as Alias
 import Elm.Syntax.TypeAnnotation as Annotation
 import Elm.Syntax.Type as Type
+import Elm.Syntax.Module as Module
+import Elm.Syntax.Base as Base
 
 import String.Extra as String
 import Aliases exposing (..)
@@ -19,12 +21,12 @@ import Generator.Decoder
 import Generator.Encoder
 
 type alias Model =
-  { typesToGenerate : List (ModuleName, String)
+  { typesToGenerate : List (Dependency, String)
   , rawFiles : Dict ModuleName RawFile
   , filesContent : Dict ModuleName DecodersEncoders
   }
 
-addTypeNameToGenerate : (ModuleName, String) -> Model -> Model
+addTypeNameToGenerate : (Dependency, String) -> Model -> Model
 addTypeNameToGenerate typeName ({ typesToGenerate } as model) =
   { model | typesToGenerate = typeName :: typesToGenerate }
 
@@ -50,7 +52,7 @@ type alias DecodersEncoders =
 type alias DecodersEncodersDeps =
   { decoder : String
   , encoder : String
-  , decoderDeps : List (ModuleName, String)
+  , decoderDeps : List (Dependency, String)
   }
 
 main : Program () Model Msg
@@ -117,24 +119,31 @@ parseFileAndStoreContent value name model =
         Just moduleName_ ->
           let joinedModuleName = String.join "." moduleName_ in
           ( model
-            |> addTypeNameToGenerate (joinedModuleName, name)
+            |> addTypeNameToGenerate (InModule joinedModuleName, name)
             |> addRawFile joinedModuleName rawFile
           , Cmd.none
           )
 
-generateDecodersAndEncoders : ModuleName -> TypeName -> Model -> (Model, Cmd Msg)
-generateDecodersAndEncoders moduleName typeName ({ rawFiles, typesToGenerate, filesContent } as model) =
-  case Dict.get moduleName rawFiles of
-    Nothing -> sendErrorMessage "NoFile, what happened?" (model, Cmd.none)
-    Just rawFile ->
-      updateAndThen GenerateDecodersEncoders <|
-        ( rawFile
-          |> extractType typeName
-          |> Maybe.andThen generateDecodersEncodersAndDeps
-          |> Maybe.map (storeDecodersEncodersAndDepsIn model moduleName)
-          |> Maybe.withDefault model
-        , Cmd.none
-        )
+generateDecodersAndEncoders : Dependency -> TypeName -> Model -> (Model, Cmd Msg)
+generateDecodersAndEncoders dependency typeName ({ rawFiles, typesToGenerate, filesContent } as model) =
+  case dependency of
+    InModule moduleName ->
+      case Dict.get moduleName rawFiles of
+        Nothing -> sendErrorMessage "NoFile, what happened?" (model, Cmd.none)
+        Just rawFile ->
+          updateAndThen GenerateDecodersEncoders <|
+            ( rawFile
+              |> getDeclarationByName typeName
+              |> Maybe.andThen generateDecodersEncodersAndDeps
+              |> Debug.log "before fetching"
+              |> Maybe.map (fetchDependencies moduleName rawFile)
+              |> Debug.log "after fetching"
+              |> Maybe.map (storeDecodersEncodersAndDepsIn model moduleName)
+              |> Maybe.withDefault model
+            , Cmd.none
+            )
+    InOneOf moduleNames ->
+      (model, Cmd.none)
 
 storeDecodersEncodersAndDepsIn : Model -> ModuleName -> DecodersEncodersDeps -> Model
 storeDecodersEncodersAndDepsIn ({ typesToGenerate, filesContent } as model) moduleName { decoder, encoder, decoderDeps } =
@@ -149,8 +158,8 @@ storeDecodersEncodersAndDepsIn ({ typesToGenerate, filesContent } as model) modu
     , typesToGenerate = List.append decoderDeps (Maybe.withDefault [] (List.tail typesToGenerate))
   }
 
-extractType : String -> RawFile -> Maybe Declaration.Declaration
-extractType name rawFile =
+getDeclarationByName : String -> RawFile -> Maybe Declaration.Declaration
+getDeclarationByName name rawFile =
   Elm.Processing.process Elm.Processing.init rawFile
   |> .declarations
   |> List.map Tuple.second
@@ -196,6 +205,49 @@ generateDecodersEncodersAndDeps declaration =
       Nothing
     _ ->
       Nothing
+
+fetchDependencies : ModuleName -> RawFile -> DecodersEncodersDeps -> DecodersEncodersDeps
+fetchDependencies moduleName rawFile ({ decoderDeps } as store) =
+  let newDecoderDeps = List.map (checkIfDependencyInFile moduleName rawFile) decoderDeps in
+  { store | decoderDeps = newDecoderDeps }
+
+checkIfDependencyInFile : ModuleName -> RawFile -> (Dependency, String) -> (Dependency, String)
+checkIfDependencyInFile moduleName rawFile (dependency, typeName) =
+  let imports = Elm.RawFile.imports rawFile in
+  case dependency of
+    InModule "" ->
+      case getDeclarationByName typeName rawFile of
+        Nothing -> -- Need to check imports
+          (dependency, typeName)
+        Just _ -> (InModule moduleName, typeName)
+    InModule dependencyModule ->
+      let fullModuleName = String.split "." dependencyModule in
+      ( imports
+        |> List.filter (isSameModuleName fullModuleName)
+        |> List.map importToModuleName
+        |> moduleNameToDependency
+      , typeName
+      )
+    _ ->
+      (dependency, typeName)
+
+isSameModuleName : Base.ModuleName -> Module.Import -> Bool
+isSameModuleName moduleName_ { moduleName, moduleAlias } =
+  moduleName_ == moduleName || Just moduleName_ == moduleAlias
+
+importToModuleName : Module.Import -> ModuleName
+importToModuleName { moduleName } =
+  String.join "." moduleName
+
+moduleNameToDependency : List ModuleName -> Dependency
+moduleNameToDependency moduleNames =
+  if List.length moduleNames == 1 then
+    moduleNames
+    |> List.head
+    |> Maybe.withDefault ""
+    |> InModule
+  else
+    InOneOf moduleNames
 
 subscriptions : Model -> Sub Msg
 subscriptions model =

@@ -34,7 +34,6 @@ addRawFile moduleName rawFile ({ rawFiles } as model) =
 
 type Msg
   = FileContentRead (String, String)
-  -- | CompileDependencies (List String)
   | GenerateDecodersEncoders
   | SendErrorMessage String
 
@@ -86,27 +85,6 @@ update msg ({ rawFiles, typesToGenerate, filesContent } as model) =
     FileContentRead (value, name) ->
       updateAndThen GenerateDecodersEncoders <|
         parseFileAndStoreContent value name model
-    -- CompileDependencies dependencies ->
-    --   let depsAndTemps = List.map (findDependencyInParsedFiles parsedFiles) (Debug.log "thee" dependencies) in
-    --   ( List.foldr addNamesToGenerate model dependencies
-    --   , if List.length dependencies == 0 then
-    --       killMePleaseKillMe True
-    --     else
-    --       depsAndTemps
-    --       |> List.concatMap Tuple.first
-    --       |> List.append
-    --         [ depsAndTemps
-    --           |> List.concatMap Tuple.second
-    --           |> List.map (Result.map (Maybe.map (Tuple.first >> Tuple.second)))
-    --           |> List.map Result.toMaybe
-    --           |> List.map (Maybe.withDefault Nothing)
-    --           |> List.map (Maybe.map List.singleton)
-    --           |> List.concatMap (Maybe.withDefault [])
-    --           |> List.concat
-    --           |> (Task.succeed >> Task.perform CompileDependencies)
-    --         ]
-    --       |> Cmd.batch
-    --   )
 
 writeGeneratedFiles : Dict ModuleName DecodersEncoders -> Cmd Msg
 writeGeneratedFiles filesContent =

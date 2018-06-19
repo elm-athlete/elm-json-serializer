@@ -88,9 +88,17 @@ update msg ({ rawFiles, typesToGenerate, filesContent } as model) =
     FileContentRead (value, name) ->
       updateAndThen GenerateDecodersEncoders <|
         parseFileAndStoreContent value name model
-    FilesContentRead list ->
-      let debug = Debug.log "list" list in
-      (model, Cmd.none)
+    FilesContentRead dependencies ->
+        dependencies
+        |> List.foldr addReadFilesToRawFiles (model, Cmd.none)
+        |> updateAndThen GenerateDecodersEncoders
+
+addReadFilesToRawFiles : (FileContent, ModuleName) -> (Model, Cmd Msg) -> (Model, Cmd Msg)
+addReadFilesToRawFiles (content, moduleName) (model_, cmds) =
+  let parsedFile = Elm.Parser.parse content in
+  case parsedFile of
+    Err errors -> sendErrorMessage "Weird" (model_, cmds)
+    Ok rawFile -> (addRawFile moduleName rawFile model_, cmds)
 
 writeGeneratedFiles : Dict ModuleName DecodersEncoders -> Cmd Msg
 writeGeneratedFiles filesContent =
@@ -142,7 +150,7 @@ generateDecodersAndEncoders dependency typeName model =
               |> Maybe.andThen generateDecodersEncodersAndDeps
               |> Maybe.map (Dependency.fetchDependencies moduleName rawFile)
               |> Maybe.map (storeDecodersEncodersAndDepsIn model moduleName)
-              |> Maybe.withDefault model
+              |> Maybe.withDefault (model |> removeFirstTypeToGenerate)
             , Cmd.none
             )
     InOneOf moduleNames ->
@@ -152,6 +160,10 @@ generateDecodersAndEncoders dependency typeName model =
         |> List.concatMap removeReadFiles
         |> readThoseFiles
       )
+
+removeFirstTypeToGenerate : Model -> Model
+removeFirstTypeToGenerate ({ typesToGenerate } as model) =
+  { model | typesToGenerate = Maybe.withDefault [] (List.tail typesToGenerate) }
 
 removeReadFiles : (ModuleName, Maybe RawFile) -> List ModuleName
 removeReadFiles (moduleName, rawFile) =

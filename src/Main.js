@@ -101,7 +101,7 @@ app.ports.writeFile.subscribe(decoderAndEncoder => {
 
 const readFileOrNull = name => {
   try {
-    return fs.readFileSync(moduleName)
+    return fs.readFileSync(name)
   } catch(error) {
     return null
   }
@@ -109,11 +109,16 @@ const readFileOrNull = name => {
 
 app.ports.readThoseFiles.subscribe(moduleNames => {
   const newModules = moduleNames
-    .map(moduleName => moduleName.split('.'))
-    .map(moduleName => moduleName.join('/'))
-    .map(moduleName => sourcePaths.map(sourcePath => `${sourcePath}/${moduleName}.elm`))
+    .map(moduleName => [ moduleName.split('.').join('/'), moduleName ])
+    .map(([ pathModuleName, moduleName ]) => sourcePaths.map(sourcePath => [ `${sourcePath}/${moduleName}.elm`, moduleName ]))
     .reduce((acc, elem) => acc.concat(elem), [])
-    .map(moduleName => readFileOrNull(moduleName))
-    .reduce((acc, elem) => elem === null ? acc : acc.push(elem), [])
-    .forEach(module => console.log(module))
+    .map(([ pathModuleName, moduleName ]) => [ readFileOrNull(pathModuleName), moduleName ])
+    .reduce((acc, [ elem, moduleName ]) => {
+      if (elem === null) {
+        return acc
+      } else {
+        return acc.concat([[ elem.toString(), moduleName ]])
+      }
+    }, [])
+  app.ports.takeThoseFiles.send(newModules)
 })

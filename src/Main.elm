@@ -38,7 +38,8 @@ addRawFile moduleName rawFile ({ rawFiles } as model) =
   { model | rawFiles = Dict.insert moduleName rawFile rawFiles }
 
 type Msg
-  = FileContentRead (String, String)
+  = FileContentRead (FileContent, TypeName)
+  | FilesContentRead (List (FileContent, ModuleName))
   | GenerateDecodersEncoders
   | SendErrorMessage String
 
@@ -87,6 +88,9 @@ update msg ({ rawFiles, typesToGenerate, filesContent } as model) =
     FileContentRead (value, name) ->
       updateAndThen GenerateDecodersEncoders <|
         parseFileAndStoreContent value name model
+    FilesContentRead list ->
+      let debug = Debug.log "list" list in
+      (model, Cmd.none)
 
 writeGeneratedFiles : Dict ModuleName DecodersEncoders -> Cmd Msg
 writeGeneratedFiles filesContent =
@@ -187,4 +191,7 @@ generateDecodersEncodersAndDeps declaration =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-  fileContentRead FileContentRead
+  Sub.batch
+    [ fileContentRead FileContentRead
+    , takeThoseFiles FilesContentRead
+    ]

@@ -107,18 +107,48 @@ const readFileOrNull = name => {
   }
 }
 
+const checkDependencyExists = tuples => {
+  const moduleName = tuples
+    .map(([ elem, moduleName]) => moduleName)
+    .reduce((acc, elem) => elem, "")
+  const results = tuples
+    .map(([ elem ]) => !(elem === null))
+
+  if (!(new Set(results)).has(true)) {
+    console.error(`Unable to find the dependency ${moduleName}.`)
+    process.exit(1)
+  }
+
+  return tuples
+}
+
+const flattenDependencies = (acc, [ elem, moduleName ]) => {
+  if (elem === null) {
+    return acc
+  } else {
+    return acc.concat([[ elem.toString(), moduleName ]])
+  }
+}
+
+const convertModuleName = ([ pathModuleName, moduleName ]) => {
+  return sourcePaths.map(sourcePath => {
+    return [ `${sourcePath}/${moduleName}.elm`, moduleName ]
+  })
+}
+
+const readFiles = tuples => {
+  return tuples.map(([ pathModuleName, moduleName ]) => {
+    return [ readFileOrNull(pathModuleName), moduleName ]
+  })
+}
+
 app.ports.readThoseFiles.subscribe(moduleNames => {
   const newModules = moduleNames
     .map(moduleName => [ moduleName.split('.').join('/'), moduleName ])
-    .map(([ pathModuleName, moduleName ]) => sourcePaths.map(sourcePath => [ `${sourcePath}/${moduleName}.elm`, moduleName ]))
+    .map(convertModuleName)
+    .map(readFiles)
+    .map(checkDependencyExists)
     .reduce((acc, elem) => acc.concat(elem), [])
-    .map(([ pathModuleName, moduleName ]) => [ readFileOrNull(pathModuleName), moduleName ])
-    .reduce((acc, [ elem, moduleName ]) => {
-      if (elem === null) {
-        return acc
-      } else {
-        return acc.concat([[ elem.toString(), moduleName ]])
-      }
-    }, [])
+    .reduce(flattenDependencies, [])
   app.ports.takeThoseFiles.send(newModules)
 })

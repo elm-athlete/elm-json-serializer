@@ -111,7 +111,7 @@ app.ports.readThoseFiles.subscribe(moduleNames => {
   const newModules = moduleNames
     .map(moduleName => moduleName.split('.'))
     .map(moduleName => moduleName.join('/'))
-    .map(moduleName => sourcePaths.map(sourcePath => `${sourcePath}/${moduleName}`))
+    .map(moduleName => sourcePaths.map(sourcePath => `${sourcePath}/${moduleName}.elm`))
     .reduce((acc, elem) => acc.concat(elem), [])
     .map(moduleName => readFileOrNull(moduleName))
     .reduce((acc, elem) => elem === null ? acc : acc.push(elem), [])

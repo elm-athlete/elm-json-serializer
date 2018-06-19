@@ -13,6 +13,7 @@ import Elm.Syntax.TypeAnnotation as Annotation
 import Elm.Syntax.Type as Type
 import Elm.Syntax.Module as Module
 import Elm.Syntax.Base as Base
+import Elm.Syntax.Exposing as Exposing
 
 import String.Extra as String
 import Aliases exposing (..)
@@ -125,7 +126,8 @@ parseFileAndStoreContent value name model =
           )
 
 generateDecodersAndEncoders : Dependency -> TypeName -> Model -> (Model, Cmd Msg)
-generateDecodersAndEncoders dependency typeName ({ rawFiles, typesToGenerate, filesContent } as model) =
+generateDecodersAndEncoders dependency typeName model =
+  let { rawFiles, typesToGenerate, filesContent } = model in
   case dependency of
     InModule moduleName ->
       case Dict.get moduleName rawFiles of
@@ -146,8 +148,9 @@ generateDecodersAndEncoders dependency typeName ({ rawFiles, typesToGenerate, fi
       (model, Cmd.none)
 
 storeDecodersEncodersAndDepsIn : Model -> ModuleName -> DecodersEncodersDeps -> Model
-storeDecodersEncodersAndDepsIn ({ typesToGenerate, filesContent } as model) moduleName { decoder, encoder, decoderDeps } =
-  let { encoders, decoders } = filesContent
+storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, decoderDeps } =
+  let { typesToGenerate, filesContent } = model
+      { encoders, decoders } = filesContent
                                |> Dict.get moduleName
                                |> Maybe.withDefault { encoders = [], decoders = [] } in
   { model
@@ -155,7 +158,8 @@ storeDecodersEncodersAndDepsIn ({ typesToGenerate, filesContent } as model) modu
       { decoders = List.append decoders [ decoder ]
       , encoders = List.append encoders [ encoder ]
       } filesContent
-    , typesToGenerate = List.append decoderDeps (Maybe.withDefault [] (List.tail typesToGenerate))
+    , typesToGenerate = List.append decoderDeps <|
+      Maybe.withDefault [] (List.tail typesToGenerate)
   }
 
 getDeclarationByName : String -> RawFile -> Maybe Declaration.Declaration
@@ -173,7 +177,10 @@ isAliasOrType declaration =
     Declaration.TypeDecl decl -> True
     _ -> False
 
-findDeclarationByName : String -> List Declaration.Declaration -> Maybe Declaration.Declaration
+findDeclarationByName
+   : String
+  -> List Declaration.Declaration
+  -> Maybe Declaration.Declaration
 findDeclarationByName name declarations =
   case declarations of
     Declaration.AliasDecl decl :: tl ->
@@ -206,19 +213,41 @@ generateDecodersEncodersAndDeps declaration =
     _ ->
       Nothing
 
-fetchDependencies : ModuleName -> RawFile -> DecodersEncodersDeps -> DecodersEncodersDeps
+fetchDependencies
+   : ModuleName
+  -> RawFile
+  -> DecodersEncodersDeps
+  -> DecodersEncodersDeps
 fetchDependencies moduleName rawFile ({ decoderDeps } as store) =
-  let newDecoderDeps = List.map (checkIfDependencyInFile moduleName rawFile) decoderDeps in
-  { store | decoderDeps = newDecoderDeps }
+  decoderDeps
+  |> List.map (checkIfDependencyInFile moduleName rawFile)
+  |> setDecoderDepsIn store
 
-checkIfDependencyInFile : ModuleName -> RawFile -> (Dependency, String) -> (Dependency, String)
+setDecoderDepsIn
+   : DecodersEncodersDeps
+  -> List (Dependency, String)
+  -> DecodersEncodersDeps
+setDecoderDepsIn store deps =
+  { store | decoderDeps = deps }
+
+checkIfDependencyInFile
+   : ModuleName
+  -> RawFile
+  -> (Dependency, String)
+  -> (Dependency, String)
 checkIfDependencyInFile moduleName rawFile (dependency, typeName) =
   let imports = Elm.RawFile.imports rawFile in
   case dependency of
     InModule "" ->
       case getDeclarationByName typeName rawFile of
-        Nothing -> -- Need to check imports
-          (dependency, typeName)
+        Nothing ->
+          ( imports
+            |> List.foldr (keepExposedNameOrExposingAll typeName) (False, [])
+            |> Tuple.second
+            |> List.map importToModuleName
+            |> moduleNameToDependency
+          , typeName
+          )
         Just _ -> (InModule moduleName, typeName)
     InModule dependencyModule ->
       let fullModuleName = String.split "." dependencyModule in
@@ -230,6 +259,62 @@ checkIfDependencyInFile moduleName rawFile (dependency, typeName) =
       )
     _ ->
       (dependency, typeName)
+
+keepExposedNameOrExposingAll : String -> Module.Import -> (Bool, List Module.Import) -> (Bool, List Module.Import)
+keepExposedNameOrExposingAll name ({ exposingList } as import_) (found, imports) =
+  if found then
+    (found, imports)
+  else
+    case exposingList of
+      Nothing -> (False, imports)
+      Just exposing_ ->
+        case exposing_ of
+          Exposing.All _ -> (False, import_ :: imports)
+          Exposing.Explicit topLevelExpose ->
+            topLevelExpose
+            |> List.map Tuple.second
+            |> List.map (isSomeTypeOrAliasExposed name)
+            |> isSomeFound import_ imports False
+
+type MaybeFound
+  = Found
+  | NotFound
+  | CouldBeFound
+
+isSomeFound
+   : Module.Import
+  -> List Module.Import
+  -> Bool
+  -> List MaybeFound
+  -> (Bool, List Module.Import)
+isSomeFound import_ imports onlyFound isFounds =
+  case isFounds of
+    [] -> (False, imports)
+    Found :: tl -> (True, [ import_ ])
+    NotFound :: tl -> isSomeFound import_ imports onlyFound tl
+    CouldBeFound :: tl ->
+      if onlyFound then
+        isSomeFound import_ imports onlyFound tl
+      else
+        isSomeFound import_ (import_ :: imports) True tl
+
+isSomeTypeOrAliasExposed : String -> Exposing.TopLevelExpose -> MaybeFound
+isSomeTypeOrAliasExposed typeName topLevelExpose =
+  case topLevelExpose of
+    Exposing.TypeOrAliasExpose name ->
+      if typeName == name then
+        Found
+      else
+        NotFound
+    Exposing.TypeExpose { name, open } ->
+      if typeName == name then
+        Found
+      else
+        case open of
+          Nothing -> NotFound
+          Just _ -> CouldBeFound
+    _ ->
+      NotFound
 
 isSameModuleName : Base.ModuleName -> Module.Import -> Bool
 isSameModuleName moduleName_ { moduleName, moduleAlias } =

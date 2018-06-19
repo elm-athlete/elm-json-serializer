@@ -6,6 +6,7 @@ import Elm.Syntax.Range as Range
 
 import String.Extra as String
 import Aliases exposing (..)
+import Dependency exposing (Dependency(..))
 
 generateAliasDecoderAndDeps : Alias.TypeAlias -> (String, List (Dependency, String))
 generateAliasDecoderAndDeps declaration =

@@ -20,6 +20,8 @@ import Aliases exposing (..)
 import Generator.Module
 import Generator.Decoder
 import Generator.Encoder
+import Dependency exposing (Dependency(..), DecodersEncodersDeps)
+import Declaration
 
 type alias Model =
   { typesToGenerate : List (Dependency, String)
@@ -48,12 +50,6 @@ port theresAnErrorDude : String -> Cmd msg
 type alias DecodersEncoders =
   { decoders : List String
   , encoders : List String
-  }
-
-type alias DecodersEncodersDeps =
-  { decoder : String
-  , encoder : String
-  , decoderDeps : List (Dependency, String)
   }
 
 main : Program () Model Msg
@@ -135,11 +131,9 @@ generateDecodersAndEncoders dependency typeName model =
         Just rawFile ->
           updateAndThen GenerateDecodersEncoders <|
             ( rawFile
-              |> getDeclarationByName typeName
+              |> Declaration.getDeclarationByName typeName
               |> Maybe.andThen generateDecodersEncodersAndDeps
-              |> Debug.log "before fetching"
-              |> Maybe.map (fetchDependencies moduleName rawFile)
-              |> Debug.log "after fetching"
+              |> Maybe.map (Dependency.fetchDependencies moduleName rawFile)
               |> Maybe.map (storeDecodersEncodersAndDepsIn model moduleName)
               |> Maybe.withDefault model
             , Cmd.none
@@ -162,42 +156,6 @@ storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, decoderDeps 
       Maybe.withDefault [] (List.tail typesToGenerate)
   }
 
-getDeclarationByName : String -> RawFile -> Maybe Declaration.Declaration
-getDeclarationByName name rawFile =
-  Elm.Processing.process Elm.Processing.init rawFile
-  |> .declarations
-  |> List.map Tuple.second
-  |> List.filter isAliasOrType
-  |> findDeclarationByName name
-
-isAliasOrType : Declaration.Declaration -> Bool
-isAliasOrType declaration =
-  case declaration of
-    Declaration.AliasDecl decl -> True
-    Declaration.TypeDecl decl -> True
-    _ -> False
-
-findDeclarationByName
-   : String
-  -> List Declaration.Declaration
-  -> Maybe Declaration.Declaration
-findDeclarationByName name declarations =
-  case declarations of
-    Declaration.AliasDecl decl :: tl ->
-      if decl.name == name then
-        Just (Declaration.AliasDecl decl)
-      else
-        findDeclarationByName name tl
-    Declaration.TypeDecl decl :: tl ->
-      if decl.name == name then
-        Just (Declaration.TypeDecl decl)
-      else
-        findDeclarationByName name tl
-    _ :: tl ->
-      findDeclarationByName name tl
-    [] ->
-      Nothing
-
 generateDecodersEncodersAndDeps : Declaration.Declaration -> Maybe DecodersEncodersDeps
 generateDecodersEncodersAndDeps declaration =
   case declaration of
@@ -212,127 +170,6 @@ generateDecodersEncodersAndDeps declaration =
       Nothing
     _ ->
       Nothing
-
-fetchDependencies
-   : ModuleName
-  -> RawFile
-  -> DecodersEncodersDeps
-  -> DecodersEncodersDeps
-fetchDependencies moduleName rawFile ({ decoderDeps } as store) =
-  decoderDeps
-  |> List.map (checkIfDependencyInFile moduleName rawFile)
-  |> setDecoderDepsIn store
-
-setDecoderDepsIn
-   : DecodersEncodersDeps
-  -> List (Dependency, String)
-  -> DecodersEncodersDeps
-setDecoderDepsIn store deps =
-  { store | decoderDeps = deps }
-
-checkIfDependencyInFile
-   : ModuleName
-  -> RawFile
-  -> (Dependency, String)
-  -> (Dependency, String)
-checkIfDependencyInFile moduleName rawFile (dependency, typeName) =
-  let imports = Elm.RawFile.imports rawFile in
-  case dependency of
-    InModule "" ->
-      case getDeclarationByName typeName rawFile of
-        Nothing ->
-          ( imports
-            |> List.foldr (keepExposedNameOrExposingAll typeName) (False, [])
-            |> Tuple.second
-            |> List.map importToModuleName
-            |> moduleNameToDependency
-          , typeName
-          )
-        Just _ -> (InModule moduleName, typeName)
-    InModule dependencyModule ->
-      let fullModuleName = String.split "." dependencyModule in
-      ( imports
-        |> List.filter (isSameModuleName fullModuleName)
-        |> List.map importToModuleName
-        |> moduleNameToDependency
-      , typeName
-      )
-    _ ->
-      (dependency, typeName)
-
-keepExposedNameOrExposingAll : String -> Module.Import -> (Bool, List Module.Import) -> (Bool, List Module.Import)
-keepExposedNameOrExposingAll name ({ exposingList } as import_) (found, imports) =
-  if found then
-    (found, imports)
-  else
-    case exposingList of
-      Nothing -> (False, imports)
-      Just exposing_ ->
-        case exposing_ of
-          Exposing.All _ -> (False, import_ :: imports)
-          Exposing.Explicit topLevelExpose ->
-            topLevelExpose
-            |> List.map Tuple.second
-            |> List.map (isSomeTypeOrAliasExposed name)
-            |> isSomeFound import_ imports False
-
-type MaybeFound
-  = Found
-  | NotFound
-  | CouldBeFound
-
-isSomeFound
-   : Module.Import
-  -> List Module.Import
-  -> Bool
-  -> List MaybeFound
-  -> (Bool, List Module.Import)
-isSomeFound import_ imports onlyFound isFounds =
-  case isFounds of
-    [] -> (False, imports)
-    Found :: tl -> (True, [ import_ ])
-    NotFound :: tl -> isSomeFound import_ imports onlyFound tl
-    CouldBeFound :: tl ->
-      if onlyFound then
-        isSomeFound import_ imports onlyFound tl
-      else
-        isSomeFound import_ (import_ :: imports) True tl
-
-isSomeTypeOrAliasExposed : String -> Exposing.TopLevelExpose -> MaybeFound
-isSomeTypeOrAliasExposed typeName topLevelExpose =
-  case topLevelExpose of
-    Exposing.TypeOrAliasExpose name ->
-      if typeName == name then
-        Found
-      else
-        NotFound
-    Exposing.TypeExpose { name, open } ->
-      if typeName == name then
-        Found
-      else
-        case open of
-          Nothing -> NotFound
-          Just _ -> CouldBeFound
-    _ ->
-      NotFound
-
-isSameModuleName : Base.ModuleName -> Module.Import -> Bool
-isSameModuleName moduleName_ { moduleName, moduleAlias } =
-  moduleName_ == moduleName || Just moduleName_ == moduleAlias
-
-importToModuleName : Module.Import -> ModuleName
-importToModuleName { moduleName } =
-  String.join "." moduleName
-
-moduleNameToDependency : List ModuleName -> Dependency
-moduleNameToDependency moduleNames =
-  if List.length moduleNames == 1 then
-    moduleNames
-    |> List.head
-    |> Maybe.withDefault ""
-    |> InModule
-  else
-    InOneOf moduleNames
 
 subscriptions : Model -> Sub Msg
 subscriptions model =

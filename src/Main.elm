@@ -43,9 +43,12 @@ type Msg
   | SendErrorMessage String
 
 port fileContentRead : ((FileContent, TypeName) -> msg) -> Sub msg
+port takeThoseFiles : (List (FileContent, ModuleName) -> msg) -> Sub msg
+
 port writeFile : (Decoder, Encoder, FileName) -> Cmd msg
 port killMePleaseKillMe : Bool -> Cmd msg
 port theresAnErrorDude : String -> Cmd msg
+port readThoseFiles : List String -> Cmd msg
 
 type alias DecodersEncoders =
   { decoders : List String
@@ -127,7 +130,7 @@ generateDecodersAndEncoders dependency typeName model =
   case dependency of
     InModule moduleName ->
       case Dict.get moduleName rawFiles of
-        Nothing -> sendErrorMessage "NoFile, what happened?" (model, Cmd.none)
+        Nothing -> (model, readThoseFiles [ moduleName ])
         Just rawFile ->
           updateAndThen GenerateDecodersEncoders <|
             ( rawFile
@@ -139,7 +142,18 @@ generateDecodersAndEncoders dependency typeName model =
             , Cmd.none
             )
     InOneOf moduleNames ->
-      (model, Cmd.none)
+      ( model
+      , moduleNames
+        |> List.map (\name -> (name, Dict.get name rawFiles))
+        |> List.concatMap removeReadFiles
+        |> readThoseFiles
+      )
+
+removeReadFiles : (ModuleName, Maybe RawFile) -> List ModuleName
+removeReadFiles (moduleName, rawFile) =
+  case rawFile of
+    Nothing -> [ moduleName ]
+    Just _ -> []
 
 storeDecodersEncodersAndDepsIn : Model -> ModuleName -> DecodersEncodersDeps -> Model
 storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, decoderDeps } =

@@ -4,6 +4,7 @@ const app = Elm.Main.worker()
 const util = require('util')
 const { execSync } = require('child_process')
 const commandExists = require('command-exists').sync
+const fs = require('fs')
 
 if (!commandExists('elm-format')) {
   console.error('Elm Format is not on your path. Install it before using this software please!')
@@ -26,8 +27,29 @@ const pathGenerator = (name) => {
   }
 }
 
+// Check wheter elm.json is present.
+const readElmOptions = () => {
+  try {
+    return JSON.parse(fs.readFileSync(`${cwd}/elm.json`))
+  } catch(error) {
+    console.log(error)
+    process.exit(1)
+  }
+}
+
+const elmOptions = readElmOptions()
+
+const determineSourceDirectories = () => {
+  if (elmOptions['type'] === 'package') {
+    return [ 'src' ]
+  } else {
+    return elmOptions['source-directories'].map(source => `${cwd}/${source}`)
+  }
+}
+
+const sourcePaths = determineSourceDirectories()
+
 // Read the first file.
-const fs = require('fs')
 fs.readFile(completeFilePath, (err, res) => {
   app.ports.fileContentRead.send([ res.toString(), name ])
 })
@@ -75,4 +97,23 @@ app.ports.writeFile.subscribe(decoderAndEncoder => {
     }
   }
   // timeoutValue = timeout()
+})
+
+const readFileOrNull = name => {
+  try {
+    return fs.readFileSync(moduleName)
+  } catch(error) {
+    return null
+  }
+}
+
+app.ports.readThoseFiles.subscribe(moduleNames => {
+  const newModules = moduleNames
+    .map(moduleName => moduleName.split('.'))
+    .map(moduleName => moduleName.join('/'))
+    .map(moduleName => sourcePaths.map(sourcePath => `${sourcePath}/${moduleName}`))
+    .reduce((acc, elem) => acc.concat(elem), [])
+    .map(moduleName => readFileOrNull(moduleName))
+    .reduce((acc, elem) => elem === null ? acc : acc.push(elem), [])
+    .forEach(module => console.log(module))
 })

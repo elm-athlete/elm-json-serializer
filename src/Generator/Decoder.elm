@@ -133,7 +133,7 @@ addDecoderPipelineStructure name decoder =
 
 encloseInDecoderFunction : String -> String -> String
 encloseInDecoderFunction name decoder =
-  let functionName = String.camelize name ++ "Decoder" in
+  let functionName = "decode" ++ name in
   [ [ functionName, ": Decoder", name ]
   , [ functionName, "=" ]
   , [ String.indent decoder ]

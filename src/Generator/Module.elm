@@ -36,6 +36,7 @@ generateFileContent : String -> String -> GenerationRequirements -> String
 generateFileContent name content { moduleNamespace, imported, andMap } =
   [ moduleGeneration name moduleNamespace
   , String.spaceJoin [ "import", imported ]
+  , String.spaceJoin [ "import", name, "exposing (..)"]
   , andMap
   , content
   ]

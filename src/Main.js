@@ -73,13 +73,6 @@ app.ports.killMePleaseKillMe.subscribe(value => {
   process.exit(0)
 })
 
-// const timeout = () => setTimeout(() => {
-//   console.error('Timeout, execution took too long to execute. Please, open an issue on GitHub with your use case.')
-//   process.exit(1)
-// }, 10000)
-
-// let timeoutValue = timeout()
-
 // Write files when elm send them.
 app.ports.writeFile.subscribe(decoderAndEncoder => {
   if (decoderAndEncoder === null) {
@@ -90,7 +83,6 @@ app.ports.writeFile.subscribe(decoderAndEncoder => {
   const encoder = decoderAndEncoder[1]
   const fileName = decoderAndEncoder[2]
   const paths = pathGenerator(fileName)
-  // clearTimeout(timeoutValue)
   if (fs.existsSync(completeGeneratedFilePath)) {
     if (!fs.existsSync(paths.root)) {
       fs.mkdirSync(paths.root)
@@ -105,7 +97,6 @@ app.ports.writeFile.subscribe(decoderAndEncoder => {
       process.exit(1)
     }
   }
-  // timeoutValue = timeout()
 })
 
 const readFileOrNull = name => {

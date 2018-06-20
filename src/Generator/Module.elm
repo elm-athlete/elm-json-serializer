@@ -7,6 +7,7 @@ import String.Extra as String
 import Aliases exposing (..)
 import Dependency exposing (Dependency(..))
 import Declaration
+import Elm.Syntax.Declaration as Declaration
 import Generator.Static
 
 type DecoderEncoder
@@ -16,9 +17,9 @@ type DecoderEncoder
 addModuleName
    : Dict ModuleName RawFile
   -> List (Dependency, String)
-  -> ModuleName 
-  -> DecoderEncoder 
-  -> String 
+  -> ModuleName
+  -> DecoderEncoder
+  -> String
   -> String
 addModuleName rawFiles dependencies moduleName decoder content =
   let imports = dependencies
@@ -55,13 +56,14 @@ generateImportsFromDeps rawFiles moduleName decoder (dependency, typeName) =
     InOneOf names ->
       names
       |> List.map (\name -> (name, Dict.get name rawFiles))
-      |> List.map getDeclarationsInRawFiles
+      |> List.map (getDeclarationsInRawFiles typeName)
       |> List.concatMap (validDeclarationToImport decoder)
 
 getDeclarationsInRawFiles
-   : (ModuleName, Maybe RawFile)
+   : String
+  -> (ModuleName, Maybe RawFile)
   -> (ModuleName, Maybe Declaration.Declaration)
-getDeclarationsInRawFiles =
+getDeclarationsInRawFiles typeName =
   Tuple.mapSecond
     (Maybe.andThen
       (Declaration.getDeclarationByName typeName)
@@ -76,7 +78,7 @@ validDeclarationToImport decoder (name, declaration) =
     Nothing -> []
     Just _ -> importDependency name decoder
 
-importDependency : ModuleName -> DecoderEncoder -> String
+importDependency : ModuleName -> DecoderEncoder -> List String
 importDependency name decoder =
   [ "import"
   , name ++ "." ++ case decoder of

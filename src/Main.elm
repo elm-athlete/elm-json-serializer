@@ -93,7 +93,7 @@ update msg ({ rawFiles, typesToGenerate, filesContent, generatedTypes } as model
         Nothing -> (model, writeGeneratedFiles model filesContent)
         Just (dependency, typeName) ->
           if List.member (dependency, typeName) generatedTypes then
-            updateAndThen GenerateDecodersEncoders <|
+            updateAndThen GenerateDecodersEncoders
               (removeFirstTypeToGenerate model, Cmd.none)
           else
             generateDecodersAndEncoders dependency typeName model
@@ -162,17 +162,23 @@ generateDecodersAndEncoders dependency typeName model =
       case Dict.get moduleName rawFiles of
         Nothing -> (model, readThoseFiles [ moduleName ])
         Just rawFile ->
-          updateAndThen GenerateDecodersEncoders <|
-            ( rawFile
-              |> Declaration.getDeclarationByName typeName
-              |> Maybe.andThen generateDecodersEncodersAndDeps
-              |> Maybe.map (Dependency.fetchDependencies moduleName rawFile)
-              |> Maybe.map (storeDecodersEncodersAndDepsIn (addGeneratedTypes (dependency, typeName) model) moduleName)
-              |> Maybe.withDefault (model |> removeFirstTypeToGenerate)
-            , Cmd.none
-            )
+          let
+            modelWithTypeDecodersAndEncoders =
+              model
+              |> addGeneratedTypes (dependency, typeName)
+              |> storeDecodersEncodersAndDepsIn moduleName
+          in
+            updateAndThen GenerateDecodersEncoders <|
+              ( rawFile
+                |> Declaration.getDeclarationByName typeName
+                |> Maybe.andThen generateDecodersEncodersAndDeps
+                |> Maybe.map (Dependency.fetchDependencies moduleName rawFile)
+                |> Maybe.map modelWithTypeDecodersAndEncoders
+                |> Maybe.withDefault (removeFirstTypeToGenerate model)
+              , Cmd.none
+              )
     InOneOf moduleNames ->
-      let dependencies = List.map (\name -> (name, Dict.get name rawFiles)) moduleNames in
+      let dependencies = List.map (fetchRawFile rawFiles) moduleNames in
       if List.member Nothing (List.map Tuple.second dependencies) then
         ( model
         , dependencies
@@ -185,9 +191,17 @@ generateDecodersAndEncoders dependency typeName model =
             |> removeFirstTypeToGenerate
             |> addGeneratedTypes (dependency, typeName)
             |> addTypesNameToGenerate
-              (List.map (Tuple.mapSecond (always typeName) >> Tuple.mapFirst InModule) dependencies)
+              (List.map (changeRawFilesAsDependency typeName) dependencies)
           , Cmd.none
           )
+
+fetchRawFile : Dict ModuleName RawFile -> ModuleName -> (ModuleName, Maybe RawFile)
+fetchRawFile rawFiles name =
+  (name, Dict.get name rawFiles)
+
+changeRawFilesAsDependency : String -> (String, Maybe RawFile) -> (Dependency, String)
+changeRawFilesAsDependency typeName =
+  Tuple.mapSecond (always typeName) >> Tuple.mapFirst InModule
 
 addGeneratedTypes : (Dependency, String) -> Model -> Model
 addGeneratedTypes value ({ generatedTypes } as model) =
@@ -203,8 +217,8 @@ removeReadFiles (moduleName, rawFile) =
     Nothing -> [ moduleName ]
     Just _ -> []
 
-storeDecodersEncodersAndDepsIn : Model -> ModuleName -> DecodersEncodersDeps -> Model
-storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, dependencies } =
+storeDecodersEncodersAndDepsIn : ModuleName -> Model -> DecodersEncodersDeps -> Model
+storeDecodersEncodersAndDepsIn moduleName model { decoder, encoder, dependencies } =
   let { typesToGenerate, filesContent, generatedTypes } = model
       fileContent = filesContent
                     |> Dict.get moduleName
@@ -219,8 +233,15 @@ storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, dependencies
       , encoders = List.append fileContent.encoders [ encoder ]
       , dependencies = List.append fileContent.dependencies dependencies
       } filesContent
-    , typesToGenerate = List.append (List.filter (\elem -> not (List.member elem generatedTypes)) dependencies) <|
-      Maybe.withDefault [] (List.tail typesToGenerate)
+    , typesToGenerate =
+      typesToGenerate
+      |> List.tail
+      |> Maybe.withDefault []
+      |> List.append
+        (List.filter
+          (\elem -> not (List.member elem generatedTypes))
+          dependencies
+        )
   }
 
 generateDecodersEncodersAndDeps : Declaration.Declaration -> Maybe DecodersEncodersDeps

@@ -6,15 +6,23 @@ const { execSync } = require('child_process')
 const commandExists = require('command-exists').sync
 const fs = require('fs')
 const shell = require('shelljs')
+var program = require('commander')
 
 if (!commandExists('elm-format')) {
   console.error('Elm Format is not on your path. Install it before using this software please!')
   process.exit(1)
 }
 
-const filePath = process.argv[2]
-const name = process.argv[3]
-const generatedFilePath = process.argv[4]
+program
+  .version('0.1.0')
+  .option('-f, --file <fileInput>', 'File input')
+  .option('-t, --type <typeInput>', 'Type to generate encoders and decoders')
+  .option('-o, --output <outputFolder>', 'Output folder')
+  .parse(process.argv)
+
+const filePath = program.file
+const name = program.type
+const generatedFilePath = program.output
 const cwd = process.cwd()
 const completeFilePath = `${cwd}/${filePath}`
 const completeGeneratedFilePath = `${cwd}/${generatedFilePath}`
@@ -157,7 +165,7 @@ app.ports.readThoseFiles.subscribe(moduleNames => {
 app.ports.writeStaticFile.subscribe(([ fileName, content ]) => {
   const paths = fileName.split('.')
   const extra = paths.pop()
-  const fullPath = `${cwd}/src/${paths.join('/')}`
+  const fullPath = `${cwd}/${generatedFilePath}/${paths.join('/')}`
   shell.mkdir('-p', fullPath)
   fs.writeFileSync(
     `${fullPath}/${extra}.elm`,

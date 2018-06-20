@@ -4,7 +4,7 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "start": "/Users/doctor/Downloads/elm make src/Main.elm --output=dist/app.js && node src/Main.js example/Model.elm Model example"
+    "start": "/Users/doctor/Downloads/elm make src/Main.elm --output=dist/app.js && node src/Main.js -f example/Model.elm -t Model -o example"
   },
   "dependencies": {
     "command-exists": "^1.2.6",

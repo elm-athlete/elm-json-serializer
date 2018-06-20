@@ -49,14 +49,15 @@ unionConstructor : List Type.ValueConstructor -> (String, List (Dependency, Stri
 unionConstructor constructors =
   let constructs = constructors
                    |> List.map constructorDecoder
-                   |> List.map (Tuple.mapFirst String.indent) in
-  ( [ "case value of"
-    , constructs
-      |> List.map Tuple.first
-      |> String.newlineJoin
-    , String.indent "_ -> Decode.fail"
-    ]
-    |> String.newlineJoin
+                   |> List.map (Tuple.mapFirst String.indent)
+      constructorCases = constructs
+                         |> List.map Tuple.first
+                         |> String.newlineJoin
+      casePlaceholder = [ "case value of"
+                        , constructorCases
+                        , String.indent "_ -> Decode.fail"
+                        ] in
+  ( String.newlineJoin casePlaceholder
   , List.concatMap Tuple.second constructs
   )
 
@@ -65,12 +66,7 @@ constructorDecoder { name, arguments } =
   let decoders = arguments
                  |> List.indexedMap argumentDecoder
                  |> List.map (Tuple.mapFirst String.surroundByParen) in
-  ( [ [ String.surroundByQuotes name
-      , "-> Decode.succeed"
-      , name
-      , if List.length arguments > 0 then "|> andMap" else ""
-      ]
-      |> String.spaceJoin
+  ( [ decoderHeader name arguments
     , decoders
       |> List.map Tuple.first
       |> String.join "|> andMap"
@@ -81,20 +77,39 @@ constructorDecoder { name, arguments } =
   , List.concatMap Tuple.second decoders
   )
 
+decoderHeader : String -> List a -> String
+decoderHeader name arguments =
+  [ String.surroundByQuotes name
+  , "-> Decode.succeed"
+  , name
+  , if List.length arguments > 0 then
+      "|> andMap"
+    else
+      ""
+  ]
+  |> String.spaceJoin
+
 argumentDecoder : Int -> (Range.Range, Annotation.TypeAnnotation) -> (String, List (Dependency, String))
 argumentDecoder index (_, annotation) =
-  let (decoder, deps) = typeAnnotationDecoder annotation in
-  ( [ [ "Decode.field"
-      , index
-        |> indexToFieldName
-        |> String.surroundByQuotes
-      ]
-      |> String.spaceJoin
-    , putRecordBaseIfNeeded annotation decoder
-    ]
-    |> String.spaceJoin
-  , deps
-  )
+  annotation
+  |> typeAnnotationDecoder
+  |> Tuple.mapFirst (putDecodeIndexedField index annotation)
+
+putDecodeIndexedField : Int -> Annotation.TypeAnnotation -> String -> String
+putDecodeIndexedField index annotation decoder =
+  [ decodeIndexedField index
+  , putRecordBaseIfNeeded annotation decoder
+  ]
+  |> String.spaceJoin
+
+decodeIndexedField : Int -> String
+decodeIndexedField index =
+  [ "Decode.field"
+  , index
+    |> indexToFieldName
+    |> String.surroundByQuotes
+  ]
+  |> String.spaceJoin
 
 putRecordBaseIfNeeded annotation decoder =
   case annotation of

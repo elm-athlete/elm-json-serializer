@@ -13,10 +13,18 @@ type DecoderEncoder
   = Decoder
   | Encoder
 
-addModuleName : Dict ModuleName RawFile -> List (Dependency, String) -> ModuleName -> DecoderEncoder -> String -> String
+addModuleName
+   : Dict ModuleName RawFile
+  -> List (Dependency, String)
+  -> ModuleName 
+  -> DecoderEncoder 
+  -> String 
+  -> String
 addModuleName rawFiles dependencies moduleName decoder content =
-  let imports = List.concatMap (generateImportsFromDeps rawFiles moduleName decoder) dependencies in
-  generateFileContent moduleName (String.newlineJoin imports) content <|
+  let imports = dependencies
+                |> List.concatMap (generateImportsFromDeps rawFiles moduleName decoder)
+                |> String.newlineJoin in
+  generateFileContent moduleName imports content <|
     case decoder of
       Decoder ->
         GenerationRequirements
@@ -32,37 +40,52 @@ type alias GenerationRequirements =
   , imported : String
   }
 
-generateImportsFromDeps : Dict ModuleName RawFile -> ModuleName -> DecoderEncoder -> (Dependency, String) -> List String
+generateImportsFromDeps
+   : Dict ModuleName RawFile
+  -> ModuleName
+  -> DecoderEncoder
+  -> (Dependency, String)
+  -> List String
 generateImportsFromDeps rawFiles moduleName decoder (dependency, typeName) =
   case dependency of
     InModule name ->
-      if name == moduleName then
-        []
-      else
-        [ "import"
-        , name ++ "." ++ case decoder of
-          Decoder -> "Decoder"
-          Encoder -> "Encoder"
-        , "exposing (..)"
-        ]
-        |> String.spaceJoin
-        |> List.singleton
+      case name == moduleName of
+        True -> []
+        False -> importDependency name decoder
     InOneOf names ->
       names
       |> List.map (\name -> (name, Dict.get name rawFiles))
-      |> List.map (\(name, maybeRawFile) -> (name, Maybe.andThen (Declaration.getDeclarationByName typeName) maybeRawFile))
-      |> List.concatMap (\(name, declaration) ->
-        case declaration of
-          Nothing -> []
-          Just _ ->
-            [ "import"
-            , name ++ "." ++ case decoder of
-              Decoder -> "Decoder"
-              Encoder -> "Encoder"
-            , "exposing (..)"
-            ]
-            |> String.spaceJoin
-            |> List.singleton)
+      |> List.map getDeclarationsInRawFiles
+      |> List.concatMap (validDeclarationToImport decoder)
+
+getDeclarationsInRawFiles
+   : (ModuleName, Maybe RawFile)
+  -> (ModuleName, Maybe Declaration.Declaration)
+getDeclarationsInRawFiles =
+  Tuple.mapSecond
+    (Maybe.andThen
+      (Declaration.getDeclarationByName typeName)
+    )
+
+validDeclarationToImport
+   : DecoderEncoder
+  -> (ModuleName, Maybe Declaration.Declaration)
+  -> List String
+validDeclarationToImport decoder (name, declaration) =
+  case declaration of
+    Nothing -> []
+    Just _ -> importDependency name decoder
+
+importDependency : ModuleName -> DecoderEncoder -> String
+importDependency name decoder =
+  [ "import"
+  , name ++ "." ++ case decoder of
+    Decoder -> "Decoder"
+    Encoder -> "Encoder"
+  , "exposing (..)"
+  ]
+  |> String.spaceJoin
+  |> List.singleton
 
 generateFileContent : ModuleName -> String -> String -> GenerationRequirements -> String
 generateFileContent moduleName imports content { moduleNamespace, imported } =

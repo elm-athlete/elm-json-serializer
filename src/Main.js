@@ -5,6 +5,7 @@ const util = require('util')
 const { execSync } = require('child_process')
 const commandExists = require('command-exists').sync
 const fs = require('fs')
+const shell = require('shelljs')
 
 if (!commandExists('elm-format')) {
   console.error('Elm Format is not on your path. Install it before using this software please!')
@@ -151,4 +152,16 @@ app.ports.readThoseFiles.subscribe(moduleNames => {
     .reduce((acc, elem) => acc.concat(elem), [])
     .reduce(flattenDependencies, [])
   app.ports.takeThoseFiles.send(newModules)
+})
+
+app.ports.writeStaticFile.subscribe(([ fileName, content ]) => {
+  const paths = fileName.split('.')
+  const extra = paths.pop()
+  const fullPath = `${cwd}/src/${paths.join('/')}`
+  shell.mkdir('-p', fullPath)
+  fs.writeFileSync(
+    `${fullPath}/${extra}.elm`,
+    content
+  )
+  execSync(`elm-format ${fullPath}/${extra}.elm --yes`)
 })

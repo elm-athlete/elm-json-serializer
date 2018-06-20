@@ -7,6 +7,7 @@ import String.Extra as String
 import Aliases exposing (..)
 import Dependency exposing (Dependency(..))
 import Declaration
+import Generator.Static
 
 type DecoderEncoder
   = Decoder
@@ -20,22 +21,15 @@ addModuleName rawFiles dependencies moduleName decoder content =
       Decoder ->
         GenerationRequirements
           "Decoder"
-          "Json.Decode as Decode"
-          ([ andMapFunction
-           , tupleThreeFunction
-           , tupleFourFunction
-           ]
-           |> String.newlineJoin)
+          "Json.Decode as Decode exposing (Decoder)"
       Encoder ->
         GenerationRequirements
           "Encoder"
           "Json.Encode as Encode"
-          ""
 
 type alias GenerationRequirements =
   { moduleNamespace : String
   , imported : String
-  , andMap : String
   }
 
 generateImportsFromDeps : Dict ModuleName RawFile -> ModuleName -> DecoderEncoder -> (Dependency, String) -> List String
@@ -71,12 +65,12 @@ generateImportsFromDeps rawFiles moduleName decoder (dependency, typeName) =
             |> List.singleton)
 
 generateFileContent : ModuleName -> String -> String -> GenerationRequirements -> String
-generateFileContent moduleName imports content { moduleNamespace, imported, andMap } =
+generateFileContent moduleName imports content { moduleNamespace, imported } =
   [ moduleGeneration moduleName moduleNamespace
   , String.spaceJoin [ "import", imported ]
   , String.spaceJoin [ "import", moduleName, "exposing (..)"]
+  , String.spaceJoin [ "import", Generator.Static.moduleName, "exposing (..)" ]
   , imports
-  , andMap
   , content
   ]
   |> String.newlineJoin
@@ -88,24 +82,3 @@ moduleGeneration name moduleNamespace =
   , "exposing (..)"
   ]
   |> String.spaceJoin
-
-andMapFunction : String
-andMapFunction =
-  [ "andMap : Decoder a -> Decoder (a -> b) -> Decoder b"
-  , "andMap = Decode.map2 (|>)"
-  ]
-  |> String.newlineJoin
-
-tupleThreeFunction : String
-tupleThreeFunction =
-  [ "tupleThree : a -> b -> c -> (a, b, c)"
-  , "tupleThree a b c d = Decode.map3 (\\a b c -> (a, b, c))"
-  ]
-  |> String.newlineJoin
-
-tupleFourFunction : String
-tupleFourFunction =
-  [ "tupleFour : a -> b -> c -> d -> (a, b, c, d)"
-  , "tupleFour a b c d = Decode.map4 (\\a b c d -> (a, b, c, d))"
-  ]
-  |> String.newlineJoin

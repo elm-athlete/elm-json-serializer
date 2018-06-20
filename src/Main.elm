@@ -20,6 +20,7 @@ import Aliases exposing (..)
 import Generator.Module
 import Generator.Decoder
 import Generator.Encoder
+import Generator.Static
 import Dependency exposing (Dependency(..), DecodersEncodersDeps)
 import Declaration
 
@@ -51,6 +52,7 @@ port fileContentRead : ((FileContent, TypeName) -> msg) -> Sub msg
 port takeThoseFiles : (List (FileContent, ModuleName) -> msg) -> Sub msg
 
 port writeFile : (Decoder, Encoder, FileName) -> Cmd msg
+port writeStaticFile : (FileName, String) -> Cmd msg
 port killMePleaseKillMe : Bool -> Cmd msg
 port theresAnErrorDude : String -> Cmd msg
 port readThoseFiles : List String -> Cmd msg
@@ -110,6 +112,12 @@ writeGeneratedFiles model filesContent =
   filesContent
   |> Dict.toList
   |> List.map (writeFileContent model)
+  |> List.append
+    [ writeStaticFile
+      ( Generator.Static.moduleName
+      , Generator.Static.jsonDecodeExtra
+      )
+    ]
   |> Cmd.batch
 
 writeFileContent : Model -> (String, DecodersEncoders) -> Cmd Msg

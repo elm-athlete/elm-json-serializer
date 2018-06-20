@@ -4,11 +4,15 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "start": "/Users/doctor/Downloads/elm make src/Main.elm --output=dist/app.js && node src/Main.js -f example/Model.elm -t Model -o example"
+    "start": "/Users/doctor/Downloads/elm make src/Main.elm --output=dist/app.js && ./src/Main.js -f example/Model.elm -t Model -o example",
+    "install": "elm make src/Main.elm --optimize --output=dist/app.js"
   },
   "dependencies": {
     "command-exists": "^1.2.6",
     "commander": "^2.15.1",
     "shelljs": "^0.8.2"
+  },
+  "bin": {
+    "elm-serializer": "src/Main.js"
   }
 }

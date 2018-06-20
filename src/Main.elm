@@ -28,6 +28,7 @@ type alias Model =
   { typesToGenerate : List (Dependency, String)
   , rawFiles : Dict ModuleName RawFile
   , filesContent : Dict ModuleName DecodersEncoders
+  , generatedTypes : List (Dependency, String)
   }
 
 addTypeNameToGenerate : (Dependency, String) -> Model -> Model
@@ -73,7 +74,7 @@ main =
 
 init : () -> (Model, Cmd Msg)
 init flags =
-  (Model [] Dict.empty Dict.empty, Cmd.none)
+  (Model [] Dict.empty Dict.empty [], Cmd.none)
 
 updateAndThen : Msg -> (Model, Cmd Msg) -> (Model, Cmd Msg)
 updateAndThen msg (model, cmd) =
@@ -84,14 +85,18 @@ sendErrorMessage : String -> (Model, Cmd Msg) -> (Model, Cmd Msg)
 sendErrorMessage error = updateAndThen (SendErrorMessage error)
 
 update : Msg -> Model -> (Model, Cmd Msg)
-update msg ({ rawFiles, typesToGenerate, filesContent } as model) =
+update msg ({ rawFiles, typesToGenerate, filesContent, generatedTypes } as model) =
   case msg of
     SendErrorMessage error -> (model, theresAnErrorDude error)
     GenerateDecodersEncoders ->
       case List.head typesToGenerate of
         Nothing -> (model, writeGeneratedFiles model filesContent)
         Just (dependency, typeName) ->
-          generateDecodersAndEncoders dependency typeName model
+          if List.member (dependency, typeName) generatedTypes then
+            updateAndThen GenerateDecodersEncoders <|
+              (removeFirstTypeToGenerate model, Cmd.none)
+          else
+            generateDecodersAndEncoders dependency typeName model
     FileContentRead (value, name) ->
       updateAndThen GenerateDecodersEncoders <|
         parseFileAndStoreContent value name model
@@ -162,7 +167,7 @@ generateDecodersAndEncoders dependency typeName model =
               |> Declaration.getDeclarationByName typeName
               |> Maybe.andThen generateDecodersEncodersAndDeps
               |> Maybe.map (Dependency.fetchDependencies moduleName rawFile)
-              |> Maybe.map (storeDecodersEncodersAndDepsIn model moduleName)
+              |> Maybe.map (storeDecodersEncodersAndDepsIn (addGeneratedTypes (dependency, typeName) model) moduleName)
               |> Maybe.withDefault (model |> removeFirstTypeToGenerate)
             , Cmd.none
             )
@@ -178,10 +183,15 @@ generateDecodersAndEncoders dependency typeName model =
         updateAndThen GenerateDecodersEncoders <|
           ( model
             |> removeFirstTypeToGenerate
+            |> addGeneratedTypes (dependency, typeName)
             |> addTypesNameToGenerate
               (List.map (Tuple.mapSecond (always typeName) >> Tuple.mapFirst InModule) dependencies)
           , Cmd.none
           )
+
+addGeneratedTypes : (Dependency, String) -> Model -> Model
+addGeneratedTypes value ({ generatedTypes } as model) =
+  { model | generatedTypes = value :: generatedTypes }
 
 removeFirstTypeToGenerate : Model -> Model
 removeFirstTypeToGenerate ({ typesToGenerate } as model) =
@@ -195,7 +205,7 @@ removeReadFiles (moduleName, rawFile) =
 
 storeDecodersEncodersAndDepsIn : Model -> ModuleName -> DecodersEncodersDeps -> Model
 storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, dependencies } =
-  let { typesToGenerate, filesContent } = model
+  let { typesToGenerate, filesContent, generatedTypes } = model
       fileContent = filesContent
                     |> Dict.get moduleName
                     |> Maybe.withDefault
@@ -209,7 +219,7 @@ storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, dependencies
       , encoders = List.append fileContent.encoders [ encoder ]
       , dependencies = List.append fileContent.dependencies dependencies
       } filesContent
-    , typesToGenerate = List.append dependencies <|
+    , typesToGenerate = List.append (List.filter (\elem -> not (List.member elem generatedTypes)) dependencies) <|
       Maybe.withDefault [] (List.tail typesToGenerate)
   }
 
@@ -224,7 +234,12 @@ generateDecodersEncodersAndDeps declaration =
            , dependencies = deps
            }
     Declaration.TypeDecl decl ->
-      Nothing
+      let (decoder, deps) = Generator.Decoder.generateTypedDecoderAndDeps decl in
+          -- encoder = Generator.Encoder.generateTypedEncoderAndDeps decl in
+      Just { decoder = decoder
+           , encoder = ""
+           , dependencies = deps
+           }
     _ ->
       Nothing
 

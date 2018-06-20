@@ -1,5 +1,6 @@
 module Generator.Decoder exposing (..)
 
+import Elm.Syntax.Type as Type
 import Elm.Syntax.TypeAlias as Alias
 import Elm.Syntax.TypeAnnotation as Annotation
 import Elm.Syntax.Range as Range
@@ -13,12 +14,124 @@ generateAliasDecoderAndDeps declaration =
   let decoderAndDeps = aliasDeclDecoderAndDeps declaration in
   Tuple.mapFirst (encloseInDecoderFunction declaration.name) decoderAndDeps
 
+generateTypedDecoderAndDeps : Type.Type -> (String, List (Dependency, String))
+generateTypedDecoderAndDeps type_ =
+  let decoderAndDeps = typedDeclDecoderAndDeps type_ in
+  Tuple.mapFirst (encloseInDecoderFunction type_.name) decoderAndDeps
+
 aliasDeclDecoderAndDeps : Alias.TypeAlias -> (String, List (Dependency, String))
 aliasDeclDecoderAndDeps { name, typeAnnotation } =
   typeAnnotation
   |> Tuple.second
   |> typeAnnotationDecoder
   |> Tuple.mapFirst (addDecoderPipelineStructure name)
+
+typedDeclDecoderAndDeps : Type.Type -> (String, List (Dependency, String))
+typedDeclDecoderAndDeps { name, generics, constructors } =
+  let (body, dependencies) = unionConstructor constructors in
+  ( [ baseUnionDecoder name
+    , unionConstructorName name
+    , body
+    ]
+    |> String.newlineJoin
+  , dependencies
+  )
+
+unionConstructorName : String -> String
+unionConstructorName name =
+  let functionName = "as" ++ name ++ "Constructor" in
+  [ functionName ++ " : Decoder " ++ name
+  , functionName ++ " value ="
+  ]
+  |> String.newlineJoin
+
+unionConstructor : List Type.ValueConstructor -> (String, List (Dependency, String))
+unionConstructor constructors =
+  let constructs = constructors
+                   |> List.map constructorDecoder
+                   |> List.map (Tuple.mapFirst String.indent) in
+  ( [ "case value of"
+    , constructs
+      |> List.map Tuple.first
+      |> String.newlineJoin
+    , String.indent "_ -> Decode.fail"
+    ]
+    |> String.newlineJoin
+  , List.concatMap Tuple.second constructs
+  )
+
+constructorDecoder : Type.ValueConstructor -> (String, List (Dependency, String))
+constructorDecoder { name, arguments } =
+  let decoders = arguments
+                 |> List.indexedMap argumentDecoder
+                 |> List.map (Tuple.mapFirst String.surroundByParen) in
+  ( [ [ String.surroundByQuotes name
+      , "-> Decode.succeed"
+      , name
+      , if List.length arguments > 0 then "|> andMap" else ""
+      ]
+      |> String.spaceJoin
+    , decoders
+      |> List.map Tuple.first
+      |> String.join "|> andMap"
+      |> String.indent
+      |> String.indent
+    ]
+    |> String.newlineJoin
+  , List.concatMap Tuple.second decoders
+  )
+
+argumentDecoder : Int -> (Range.Range, Annotation.TypeAnnotation) -> (String, List (Dependency, String))
+argumentDecoder index (_, annotation) =
+  let (decoder, deps) = typeAnnotationDecoder annotation in
+  ( [ [ "Decode.field"
+      , index
+        |> indexToFieldName
+        |> String.surroundByQuotes
+      ]
+      |> String.spaceJoin
+    , putRecordBaseIfNeeded annotation decoder
+    ]
+    |> String.spaceJoin
+  , deps
+  )
+
+putRecordBaseIfNeeded annotation decoder =
+  case annotation of
+    Annotation.Record definition ->
+      String.surroundByParen <|
+        String.append
+          ("Decode.succeed " ++ ([ "\\"
+           , definition
+             |> List.map Tuple.first
+             |> String.spaceJoin
+           , "->"
+           , "{"
+           , definition
+             |> List.map (\(name, _) -> name ++ " = " ++ name)
+             |> String.join ", "
+           , "}"
+           ]
+           |> String.join ""
+           |> String.surroundByParen) ++ "\n|> andMap")
+          decoder
+    _ ->
+      decoder
+
+indexToFieldName : Int -> String
+indexToFieldName index =
+  case index of
+    0 -> "first"
+    1 -> "second"
+    2 -> "third"
+    3 -> "fourth"
+    4 -> "fifth"
+    5 -> "sixth"
+    6 -> "seventh"
+    7 -> "eigth"
+    8 -> "nineth"
+    10 -> "tenth"
+    _ -> "WOW! You should reduce your number of arguments, or make a PR! 😄"
 
 typeAnnotationDecoder : Annotation.TypeAnnotation -> (String, List (Dependency, String))
 typeAnnotationDecoder typeAnnotation =
@@ -140,3 +253,15 @@ encloseInDecoderFunction name decoder =
   ]
   |> List.map String.spaceJoin
   |> String.newlineJoin
+
+baseUnionDecoder : String -> String
+baseUnionDecoder name =
+  [ "Decode.andThen" ++ " as" ++ name ++ "Constructor"
+  , [ "Decode.field"
+    , String.surroundByQuotes "type"
+    , "Decode.string"
+    ]
+    |> String.spaceJoin
+    |> String.surroundByParen
+  ]
+  |> String.join "\n "

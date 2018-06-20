@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const { Elm } = require('../dist/app.js')
 const app = Elm.Main.worker()
 
@@ -15,10 +16,24 @@ if (!commandExists('elm-format')) {
 
 program
   .version('0.1.0')
-  .option('-f, --file <fileInput>', 'File input')
-  .option('-t, --type <typeInput>', 'Type to generate encoders and decoders')
+  .option('-f, --file   <fileInput>', 'File input')
+  .option('-t, --type   <typeInput>', 'Type to generate encoders and decoders')
   .option('-o, --output <outputFolder>', 'Output folder')
   .parse(process.argv)
+
+program.on('--help', () => {
+  console.log('\n  Examples:\n')
+  console.log('    $ elm-serializer --file example/Model.elm --type Model --output example\n')
+})
+
+if (process.argv.length == 2) {
+  program.help()
+}
+
+if (program.file == undefined || program.type == undefined || program.output == undefined) {
+  console.error('You miss arguments. You should check what you wrote.')
+  process.exit(1)
+}
 
 const filePath = program.file
 const name = program.type
@@ -41,7 +56,9 @@ const readElmOptions = () => {
   try {
     return JSON.parse(fs.readFileSync(`${cwd}/elm.json`))
   } catch(error) {
-    console.log(error)
+    console.error(`It looks like there's no elm.json where you are... Are you sure you're running this program at the root of an elm project?`)
+    console.error(`Just in case, you're actually here: ${cwd}.`)
+    console.error(`If you're sure to be inside an elm project, it looks like you need to run elm init before anything else!`)
     process.exit(1)
   }
 }

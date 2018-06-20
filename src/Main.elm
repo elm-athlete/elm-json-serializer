@@ -33,13 +33,17 @@ addTypeNameToGenerate : (Dependency, String) -> Model -> Model
 addTypeNameToGenerate typeName ({ typesToGenerate } as model) =
   { model | typesToGenerate = typeName :: typesToGenerate }
 
+addTypesNameToGenerate : List (Dependency, String) -> Model -> Model
+addTypesNameToGenerate dependencies model =
+  List.foldr addTypeNameToGenerate model dependencies
+
 addRawFile : ModuleName -> RawFile -> Model -> Model
 addRawFile moduleName rawFile ({ rawFiles } as model) =
   { model | rawFiles = Dict.insert moduleName rawFile rawFiles }
 
 type Msg
   = FileContentRead (FileContent, TypeName)
-  | FilesContentRead (List (FileContent, ModuleName))
+  | MultipleFilesContentRead (List (FileContent, ModuleName))
   | GenerateDecodersEncoders
   | SendErrorMessage String
 
@@ -54,6 +58,7 @@ port readThoseFiles : List String -> Cmd msg
 type alias DecodersEncoders =
   { decoders : List String
   , encoders : List String
+  , dependencies : List (Dependency, String)
   }
 
 main : Program () Model Msg
@@ -82,13 +87,13 @@ update msg ({ rawFiles, typesToGenerate, filesContent } as model) =
     SendErrorMessage error -> (model, theresAnErrorDude error)
     GenerateDecodersEncoders ->
       case List.head typesToGenerate of
-        Nothing -> (model, writeGeneratedFiles filesContent)
-        Just (moduleName, typeName) ->
-          generateDecodersAndEncoders moduleName typeName model
+        Nothing -> (model, writeGeneratedFiles model filesContent)
+        Just (dependency, typeName) ->
+          generateDecodersAndEncoders dependency typeName model
     FileContentRead (value, name) ->
       updateAndThen GenerateDecodersEncoders <|
         parseFileAndStoreContent value name model
-    FilesContentRead dependencies ->
+    MultipleFilesContentRead dependencies ->
         dependencies
         |> List.foldr addReadFilesToRawFiles (model, Cmd.none)
         |> updateAndThen GenerateDecodersEncoders
@@ -100,22 +105,22 @@ addReadFilesToRawFiles (content, moduleName) (model_, cmds) =
     Err errors -> sendErrorMessage "Weird" (model_, cmds)
     Ok rawFile -> (addRawFile moduleName rawFile model_, cmds)
 
-writeGeneratedFiles : Dict ModuleName DecodersEncoders -> Cmd Msg
-writeGeneratedFiles filesContent =
+writeGeneratedFiles : Model -> Dict ModuleName DecodersEncoders -> Cmd Msg
+writeGeneratedFiles model filesContent =
   filesContent
   |> Dict.toList
-  |> List.map writeFileContent
+  |> List.map (writeFileContent model)
   |> Cmd.batch
 
-writeFileContent : (String, DecodersEncoders) -> Cmd Msg
-writeFileContent (moduleName, { decoders, encoders }) =
+writeFileContent : Model -> (String, DecodersEncoders) -> Cmd Msg
+writeFileContent { rawFiles } (moduleName, { decoders, encoders, dependencies }) =
   writeFile
     ( decoders
       |> String.newlineJoin
-      |> Generator.Module.addModuleName moduleName Generator.Module.Decoder
+      |> Generator.Module.addModuleName rawFiles dependencies moduleName Generator.Module.Decoder
     , encoders
       |> String.newlineJoin
-      |> Generator.Module.addModuleName moduleName Generator.Module.Encoder
+      |> Generator.Module.addModuleName rawFiles dependencies moduleName Generator.Module.Encoder
     , moduleName
     )
 
@@ -154,12 +159,21 @@ generateDecodersAndEncoders dependency typeName model =
             , Cmd.none
             )
     InOneOf moduleNames ->
-      ( model
-      , moduleNames
-        |> List.map (\name -> (name, Dict.get name rawFiles))
-        |> List.concatMap removeReadFiles
-        |> readThoseFiles
-      )
+      let dependencies = List.map (\name -> (name, Dict.get name rawFiles)) moduleNames in
+      if List.member Nothing (List.map Tuple.second dependencies) then
+        ( model
+        , dependencies
+          |> List.concatMap removeReadFiles
+          |> readThoseFiles
+        )
+      else
+        updateAndThen GenerateDecodersEncoders <|
+          ( model
+            |> removeFirstTypeToGenerate
+            |> addTypesNameToGenerate
+              (List.map (Tuple.mapSecond (always typeName) >> Tuple.mapFirst InModule) dependencies)
+          , Cmd.none
+          )
 
 removeFirstTypeToGenerate : Model -> Model
 removeFirstTypeToGenerate ({ typesToGenerate } as model) =
@@ -172,17 +186,22 @@ removeReadFiles (moduleName, rawFile) =
     Just _ -> []
 
 storeDecodersEncodersAndDepsIn : Model -> ModuleName -> DecodersEncodersDeps -> Model
-storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, decoderDeps } =
+storeDecodersEncodersAndDepsIn model moduleName { decoder, encoder, dependencies } =
   let { typesToGenerate, filesContent } = model
-      { encoders, decoders } = filesContent
-                               |> Dict.get moduleName
-                               |> Maybe.withDefault { encoders = [], decoders = [] } in
+      fileContent = filesContent
+                    |> Dict.get moduleName
+                    |> Maybe.withDefault
+                      { encoders = []
+                      , decoders = []
+                      , dependencies = []
+                      } in
   { model
     | filesContent = Dict.insert moduleName
-      { decoders = List.append decoders [ decoder ]
-      , encoders = List.append encoders [ encoder ]
+      { decoders = List.append fileContent.decoders [ decoder ]
+      , encoders = List.append fileContent.encoders [ encoder ]
+      , dependencies = List.append fileContent.dependencies dependencies
       } filesContent
-    , typesToGenerate = List.append decoderDeps <|
+    , typesToGenerate = List.append dependencies <|
       Maybe.withDefault [] (List.tail typesToGenerate)
   }
 
@@ -194,7 +213,7 @@ generateDecodersEncodersAndDeps declaration =
           encoder = Generator.Encoder.generateAliasEncoderAndDeps decl in
       Just { decoder = decoder
            , encoder = encoder
-           , decoderDeps = deps
+           , dependencies = deps
            }
     Declaration.TypeDecl decl ->
       Nothing
@@ -205,5 +224,5 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
   Sub.batch
     [ fileContentRead FileContentRead
-    , takeThoseFiles FilesContentRead
+    , takeThoseFiles MultipleFilesContentRead
     ]

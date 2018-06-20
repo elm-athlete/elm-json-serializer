@@ -1,15 +1,21 @@
 module Generator.Module exposing (..)
 
+import Dict exposing (Dict)
+import Elm.RawFile exposing (RawFile)
+
 import String.Extra as String
 import Aliases exposing (..)
+import Dependency exposing (Dependency(..))
+import Declaration
 
 type DecoderEncoder
   = Decoder
   | Encoder
 
-addModuleName : String -> DecoderEncoder -> String -> String
-addModuleName name decoder content =
-  generateFileContent name content <|
+addModuleName : Dict ModuleName RawFile -> List (Dependency, String) -> ModuleName -> DecoderEncoder -> String -> String
+addModuleName rawFiles dependencies moduleName decoder content =
+  let imports = List.concatMap (generateImportsFromDeps rawFiles moduleName decoder) dependencies in
+  generateFileContent moduleName (String.newlineJoin imports) content <|
     case decoder of
       Decoder ->
         GenerationRequirements
@@ -32,11 +38,44 @@ type alias GenerationRequirements =
   , andMap : String
   }
 
-generateFileContent : String -> String -> GenerationRequirements -> String
-generateFileContent name content { moduleNamespace, imported, andMap } =
-  [ moduleGeneration name moduleNamespace
+generateImportsFromDeps : Dict ModuleName RawFile -> ModuleName -> DecoderEncoder -> (Dependency, String) -> List String
+generateImportsFromDeps rawFiles moduleName decoder (dependency, typeName) =
+  case dependency of
+    InModule name ->
+      if name == moduleName then
+        []
+      else
+        [ "import"
+        , name ++ "." ++ case decoder of
+          Decoder -> "Decoder"
+          Encoder -> "Encoder"
+        , "exposing (..)"
+        ]
+        |> String.spaceJoin
+        |> List.singleton
+    InOneOf names ->
+      names
+      |> List.map (\name -> (name, Dict.get name rawFiles))
+      |> List.map (\(name, maybeRawFile) -> (name, Maybe.andThen (Declaration.getDeclarationByName typeName) maybeRawFile))
+      |> List.concatMap (\(name, declaration) ->
+        case declaration of
+          Nothing -> []
+          Just _ ->
+            [ "import"
+            , name ++ "." ++ case decoder of
+              Decoder -> "Decoder"
+              Encoder -> "Encoder"
+            , "exposing (..)"
+            ]
+            |> String.spaceJoin
+            |> List.singleton)
+
+generateFileContent : ModuleName -> String -> String -> GenerationRequirements -> String
+generateFileContent moduleName imports content { moduleNamespace, imported, andMap } =
+  [ moduleGeneration moduleName moduleNamespace
   , String.spaceJoin [ "import", imported ]
-  , String.spaceJoin [ "import", name, "exposing (..)"]
+  , String.spaceJoin [ "import", moduleName, "exposing (..)"]
+  , imports
   , andMap
   , content
   ]

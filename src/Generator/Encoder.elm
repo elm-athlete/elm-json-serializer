@@ -19,7 +19,7 @@ aliasDeclEncoder { name, typeAnnotation } =
 
 generateAliasEncoderAndDeps : Alias.TypeAlias -> String
 generateAliasEncoderAndDeps ({ name } as declaration) =
-  let functionName = String.camelize name ++ "Encoder" in
+  let functionName = "encode" ++ name in
   [ [ functionName, ":", name, "-> Encode.Value" ]
   , [ functionName, "record =" ]
   , [ String.indent (aliasDeclEncoder declaration) ]

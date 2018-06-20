@@ -15,7 +15,7 @@ type Dependency
 type alias DecodersEncodersDeps =
   { decoder : String
   , encoder : String
-  , decoderDeps : List (Dependency, String)
+  , dependencies : List (Dependency, String)
   }
 
 fetchDependencies
@@ -23,17 +23,17 @@ fetchDependencies
   -> RawFile
   -> DecodersEncodersDeps
   -> DecodersEncodersDeps
-fetchDependencies moduleName rawFile ({ decoderDeps } as store) =
-  decoderDeps
+fetchDependencies moduleName rawFile ({ dependencies } as store) =
+  dependencies
   |> List.map (checkIfDependencyInFile moduleName rawFile)
-  |> setDecoderDepsIn store
+  |> setDependenciesIn store
 
-setDecoderDepsIn
+setDependenciesIn
    : DecodersEncodersDeps
   -> List (Dependency, String)
   -> DecodersEncodersDeps
-setDecoderDepsIn store deps =
-  { store | decoderDeps = deps }
+setDependenciesIn store deps =
+  { store | dependencies = deps }
 
 checkIfDependencyInFile
    : ModuleName

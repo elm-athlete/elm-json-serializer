@@ -253,7 +253,7 @@ generateDecodersEncodersAndDeps declaration =
   case declaration of
     Declaration.AliasDecl decl ->
       let (decoder, deps) = Generator.Decoder.generateAliasDecoderAndDeps decl
-          encoder = Generator.Encoder.generateAliasEncoderAndDeps decl in
+          encoder = Generator.Encoder.generateAliasEncoder decl in
       Just { decoder = decoder
            , encoder = encoder
            , dependencies = deps

@@ -17,8 +17,8 @@ aliasDeclEncoder { name, typeAnnotation } =
   |> String.spaceJoin
   |> String.surroundByParen
 
-generateAliasEncoderAndDeps : Alias.TypeAlias -> String
-generateAliasEncoderAndDeps ({ name } as declaration) =
+generateAliasEncoder : Alias.TypeAlias -> String
+generateAliasEncoder ({ name } as declaration) =
   let functionName = "encode" ++ name in
   [ [ functionName, ":", name, "-> Encode.Value" ]
   , [ functionName, "record =" ]

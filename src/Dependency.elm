@@ -65,7 +65,11 @@ checkIfDependencyInFile moduleName rawFile (dependency, typeName) =
     _ ->
       (dependency, typeName)
 
-keepExposedNameOrExposingAll : String -> Module.Import -> (Bool, List Module.Import) -> (Bool, List Module.Import)
+keepExposedNameOrExposingAll
+   : String
+  -> Module.Import
+  -> (Bool, List Module.Import)
+  -> (Bool, List Module.Import)
 keepExposedNameOrExposingAll name ({ exposingList } as import_) (found, imports) =
   if found then
     (found, imports)

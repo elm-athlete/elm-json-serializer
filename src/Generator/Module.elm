@@ -23,7 +23,8 @@ addModuleName
   -> String
 addModuleName rawFiles dependencies moduleName decoder content =
   let imports = dependencies
-                |> List.concatMap (generateImportsFromDeps rawFiles moduleName decoder)
+                |> List.concatMap
+                  (generateImportsFromDeps rawFiles moduleName decoder)
                 |> String.newlineJoin in
   generateFileContent moduleName imports content <|
     case decoder of

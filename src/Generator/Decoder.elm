@@ -89,7 +89,10 @@ decoderHeader name arguments =
   ]
   |> String.spaceJoin
 
-argumentDecoder : Int -> (Range.Range, Annotation.TypeAnnotation) -> (String, List (Dependency, String))
+argumentDecoder
+   : Int
+  -> (Range.Range, Annotation.TypeAnnotation)
+  -> (String, List (Dependency, String))
 argumentDecoder index (_, annotation) =
   annotation
   |> typeAnnotationDecoder
@@ -111,27 +114,29 @@ decodeIndexedField index =
   ]
   |> String.spaceJoin
 
+putRecordBaseIfNeeded : Annotation.TypeAnnotation -> String -> String
 putRecordBaseIfNeeded annotation decoder =
   case annotation of
     Annotation.Record definition ->
-      String.surroundByParen <|
-        String.append
-          ("Decode.succeed " ++ ([ "\\"
-           , definition
-             |> List.map Tuple.first
-             |> String.spaceJoin
-           , "->"
-           , "{"
-           , definition
-             |> List.map (\(name, _) -> name ++ " = " ++ name)
-             |> String.join ", "
-           , "}"
-           ]
-           |> String.join ""
-           |> String.surroundByParen) ++ "\n|> andMap")
-          decoder
+      decoder
+      |> String.append
+        ("Decode.succeed " ++ anonymousRecord definition ++ "\n|> andMap")
+      |> String.surroundByParen
     _ ->
       decoder
+
+anonymousRecord : Annotation.RecordDefinition -> String
+anonymousRecord definition =
+  let lambdaArgs = definition
+                   |> List.map Tuple.first
+                   |> String.spaceJoin
+      lambdaBodyArg (name, _) = name ++ " = " ++ name
+      lambdaBody = definition
+                   |> List.map lambdaBodyArg
+                   |> String.join ", " in
+  [ "\\", lambdaArgs, "->", "{", lambdaBody, "}" ]
+  |> String.join ""
+  |> String.surroundByParen
 
 indexToFieldName : Int -> String
 indexToFieldName index =
@@ -184,7 +189,9 @@ recordFieldDecoderString name decoder =
     |> String.spaceJoin
     |> String.surroundByParen
 
-flattenTuples : List (String, List (Dependency, String)) -> (List String, List (Dependency, String))
+flattenTuples
+   : List (String, List (Dependency, String))
+  -> (List String, List (Dependency, String))
 flattenTuples = List.foldr concatDecoderFieldsAndKeepDeps ([], [])
 
 concatDecoderFieldsAndKeepDeps
@@ -219,7 +226,9 @@ dependencyIfNotGenericType moduleName type_ =
     "Bool" -> []
     value -> [ (InModule (String.join "." moduleName), type_) ]
 
-tupledDecoder : List (Range.Range, Annotation.TypeAnnotation) -> (String, List (Dependency, String))
+tupledDecoder
+   : List (Range.Range, Annotation.TypeAnnotation)
+  -> (String, List (Dependency, String))
 tupledDecoder annotations =
   annotations
   |> List.map Tuple.second

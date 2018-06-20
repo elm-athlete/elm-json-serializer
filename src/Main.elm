@@ -85,7 +85,8 @@ sendErrorMessage : String -> (Model, Cmd Msg) -> (Model, Cmd Msg)
 sendErrorMessage error = updateAndThen (SendErrorMessage error)
 
 update : Msg -> Model -> (Model, Cmd Msg)
-update msg ({ rawFiles, typesToGenerate, filesContent, generatedTypes } as model) =
+update msg model =
+  let { rawFiles, typesToGenerate, filesContent, generatedTypes } = model in
   case msg of
     SendErrorMessage error -> (model, theresAnErrorDude error)
     GenerateDecodersEncoders ->
@@ -105,7 +106,10 @@ update msg ({ rawFiles, typesToGenerate, filesContent, generatedTypes } as model
         |> List.foldr addReadFilesToRawFiles (model, Cmd.none)
         |> updateAndThen GenerateDecodersEncoders
 
-addReadFilesToRawFiles : (FileContent, ModuleName) -> (Model, Cmd Msg) -> (Model, Cmd Msg)
+addReadFilesToRawFiles
+   : (FileContent, ModuleName)
+  -> (Model, Cmd Msg)
+  -> (Model, Cmd Msg)
 addReadFilesToRawFiles (content, moduleName) (model_, cmds) =
   let parsedFile = Elm.Parser.parse content in
   case parsedFile of

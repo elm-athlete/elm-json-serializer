@@ -259,10 +259,10 @@ generateDecodersEncodersAndDeps declaration =
            , dependencies = deps
            }
     Declaration.TypeDecl decl ->
-      let (decoder, deps) = Generator.Decoder.generateTypedDecoderAndDeps decl in
-          -- encoder = Generator.Encoder.generateTypedEncoderAndDeps decl in
+      let (decoder, deps) = Generator.Decoder.generateTypedDecoderAndDeps decl
+          encoder = Generator.Encoder.generateTypedEncoder decl in
       Just { decoder = decoder
-           , encoder = ""
+           , encoder = encoder
            , dependencies = deps
            }
     _ ->

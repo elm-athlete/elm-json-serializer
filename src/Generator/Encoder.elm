@@ -127,13 +127,23 @@ genericTypeEncoder recordName type_ annotations =
     "Float" -> "Encode.float"
     "Bool" -> "Encode.bool"
     "List" ->
-      annotations
-      |> List.map Tuple.second
-      |> List.map (typeAnnotationEncoder recordName)
-      |> String.spaceJoin
-      |> String.surroundByParen
-      |> String.append "Encode.list"
+      annotationInGenericTypeEncoder recordName "Encode.list" annotations
+    "Maybe" ->
+      annotationInGenericTypeEncoder recordName "encodeMaybe" annotations
+    "Array" ->
+      annotationInGenericTypeEncoder recordName "Encode.array" annotations
+    "Set" ->
+      annotationInGenericTypeEncoder recordName "Encode.set" annotations
     value -> "encode" ++ value
+
+annotationInGenericTypeEncoder : String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
+annotationInGenericTypeEncoder recordName encoder annotations =
+  annotations
+  |> List.map Tuple.second
+  |> List.map (typeAnnotationEncoder recordName)
+  |> String.spaceJoin
+  |> String.surroundByParen
+  |> String.append encoder
 
 typedEncoder : String -> List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
 typedEncoder recordName oduleName type_ annotations =

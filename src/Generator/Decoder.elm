@@ -200,6 +200,24 @@ genericTypeDecoder type_ annotations =
                                          |> List.map typeAnnotationDecoder
                                          |> flattenTuples in
       ("Decode.list" ++ String.surroundByParen (String.spaceJoin annotations_), dependencies)
+    "Maybe" ->
+      let (annotations_, dependencies) = annotations
+                                         |> List.map Tuple.second
+                                         |> List.map typeAnnotationDecoder
+                                         |> flattenTuples in
+      ("Decode.nullable" ++ String.surroundByParen (String.spaceJoin annotations_), dependencies)
+    "Array" ->
+      let (annotations_, dependencies) = annotations
+                                         |> List.map Tuple.second
+                                         |> List.map typeAnnotationDecoder
+                                         |> flattenTuples in
+      ("Decode.array" ++ String.surroundByParen (String.spaceJoin annotations_), dependencies)
+    "Set" ->
+      let (annotations_, dependencies) = annotations
+                                         |> List.map Tuple.second
+                                         |> List.map typeAnnotationDecoder
+                                         |> flattenTuples in
+      ("Decode.map (Array.toList >> Set.fromList) " ++ String.surroundByParen ("Decode.array" ++ String.surroundByParen (String.spaceJoin annotations_)), dependencies)
     value -> ("decode" ++ value, [])
 
 typedDecoder
@@ -220,6 +238,7 @@ dependencyIfNotGenericType moduleName type_ =
     "Bool" -> []
     "List" -> []
     "Maybe" -> []
+    "Set" -> []
     value -> [ (InModule (String.join "." moduleName), type_) ]
 
 tupledDecoder

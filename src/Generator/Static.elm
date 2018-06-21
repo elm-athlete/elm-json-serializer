@@ -3,15 +3,17 @@ module Generator.Static exposing (..)
 import String.Extra as String
 
 moduleName : String
-moduleName = "Serializer.Json.Decode.Extra"
+moduleName = "Serializer.Json.Extra"
 
 jsonDecodeExtra : String
 jsonDecodeExtra =
   [ "module " ++ moduleName ++ " exposing (..)"
   , "import Json.Decode as Decode exposing (Decoder)"
+  , "import Json.Encode as Encode"
   , andMapFunction
   , tupleThreeFunction
   , tupleFourFunction
+  , encodeMaybeFunction
   ]
   |> String.newlineJoin
 
@@ -33,5 +35,13 @@ tupleFourFunction : String
 tupleFourFunction =
   [ "tupleFour : a -> b -> c -> d -> (a, b, c, d)"
   , "tupleFour a b c d = Decode.map4 (\\a b c d -> (a, b, c, d))"
+  ]
+  |> String.newlineJoin
+
+encodeMaybeFunction : String
+encodeMaybeFunction =
+  [ "encodeMaybe : (a -> Encode.Value) -> Maybe a -> Encode.Value"
+  , "encodeMaybe mapper field ="
+  , "  Maybe.withDefault Encode.null (Maybe.map mapper field)"
   ]
   |> String.newlineJoin

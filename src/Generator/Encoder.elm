@@ -111,26 +111,33 @@ typeAnnotationEncoder : String -> Annotation.TypeAnnotation -> String
 typeAnnotationEncoder recordName typeAnnotation =
   case typeAnnotation of
     Annotation.Record definition -> recordEncoder recordName definition
-    Annotation.GenericType type_ -> genericTypeEncoder type_
-    Annotation.Typed moduleName value annotations -> typedEncoder moduleName value annotations
+    Annotation.GenericType type_ -> genericTypeEncoder recordName type_ []
+    Annotation.Typed moduleName value annotations -> typedEncoder recordName moduleName value annotations
     -- Annotation.Unit ->
     -- Annotation.Tupled annotations ->
     -- Annotation.GenericRecord name definition ->
     -- Annotation.FunctionTypeAnnotation annotation annotation ->
     _ -> ""
 
-genericTypeEncoder : String -> String
-genericTypeEncoder type_ =
+genericTypeEncoder : String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
+genericTypeEncoder recordName type_ annotations =
   case type_ of
     "String" -> "Encode.string"
     "Int" -> "Encode.int"
     "Float" -> "Encode.float"
     "Bool" -> "Encode.bool"
+    "List" ->
+      annotations
+      |> List.map Tuple.second
+      |> List.map (typeAnnotationEncoder recordName)
+      |> String.spaceJoin
+      |> String.surroundByParen
+      |> String.append "Encode.list"
     value -> "encode" ++ value
 
-typedEncoder : List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
-typedEncoder moduleName type_ annotations =
-  genericTypeEncoder type_
+typedEncoder : String -> List String -> String -> List (Range.Range, Annotation.TypeAnnotation) -> String
+typedEncoder recordName oduleName type_ annotations =
+  genericTypeEncoder recordName type_ annotations
 
 recordEncoder : String -> Annotation.RecordDefinition -> String
 recordEncoder recordName definition =

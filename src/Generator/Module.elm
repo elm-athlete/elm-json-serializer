@@ -4,7 +4,7 @@ import Dict exposing (Dict)
 import Elm.RawFile exposing (RawFile)
 
 import String.Extra as String
-import Aliases exposing (..)
+import Shared exposing (..)
 import Dependency exposing (Dependency(..))
 import Declaration
 import Elm.Syntax.Declaration as Declaration

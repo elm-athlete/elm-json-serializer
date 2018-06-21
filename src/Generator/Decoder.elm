@@ -6,8 +6,7 @@ import Elm.Syntax.TypeAnnotation as Annotation
 import Elm.Syntax.Range as Range
 
 import String.Extra as String
-import Shared
-import Aliases exposing (..)
+import Shared exposing (..)
 import Dependency exposing (Dependency(..))
 
 generateAliasDecoderAndDeps : Alias.TypeAlias -> (String, List (Dependency, String))

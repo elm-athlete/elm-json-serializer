@@ -5,7 +5,7 @@ import Elm.Syntax.Base as Base
 import Elm.Syntax.Module as Module
 import Elm.Syntax.Exposing as Exposing
 
-import Aliases exposing (..)
+import Shared exposing (..)
 import Declaration
 
 type Dependency

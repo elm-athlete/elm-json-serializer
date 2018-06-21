@@ -16,7 +16,7 @@ import Elm.Syntax.Base as Base
 import Elm.Syntax.Exposing as Exposing
 
 import String.Extra as String
-import Aliases exposing (..)
+import Shared exposing (..)
 import Generator
 import Generator.Module
 import Generator.Static

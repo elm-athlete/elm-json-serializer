@@ -17,9 +17,8 @@ import Elm.Syntax.Exposing as Exposing
 
 import String.Extra as String
 import Aliases exposing (..)
+import Generator
 import Generator.Module
-import Generator.Decoder
-import Generator.Encoder
 import Generator.Static
 import Dependency exposing (Dependency(..), DecodersEncodersDeps)
 import Declaration
@@ -175,7 +174,7 @@ generateDecodersAndEncoders dependency typeName model =
             updateAndThen GenerateDecodersEncoders <|
               ( rawFile
                 |> Declaration.getDeclarationByName typeName
-                |> Maybe.andThen generateDecodersEncodersAndDeps
+                |> Maybe.andThen Generator.generateDecodersEncodersAndDeps
                 |> Maybe.map (Dependency.fetchDependencies moduleName rawFile)
                 |> Maybe.map modelWithTypeDecodersAndEncoders
                 |> Maybe.withDefault (removeFirstTypeToGenerate model)
@@ -247,26 +246,6 @@ storeDecodersEncodersAndDepsIn moduleName model { decoder, encoder, dependencies
           dependencies
         )
   }
-
-generateDecodersEncodersAndDeps : Declaration.Declaration -> Maybe DecodersEncodersDeps
-generateDecodersEncodersAndDeps declaration =
-  case declaration of
-    Declaration.AliasDecl decl ->
-      let (decoder, deps) = Generator.Decoder.generateAliasDecoderAndDeps decl
-          encoder = Generator.Encoder.generateAliasEncoder decl in
-      Just { decoder = decoder
-           , encoder = encoder
-           , dependencies = deps
-           }
-    Declaration.TypeDecl decl ->
-      let (decoder, deps) = Generator.Decoder.generateTypedDecoderAndDeps decl
-          encoder = Generator.Encoder.generateTypedEncoder decl in
-      Just { decoder = decoder
-           , encoder = encoder
-           , dependencies = deps
-           }
-    _ ->
-      Nothing
 
 subscriptions : Model -> Sub Msg
 subscriptions model =

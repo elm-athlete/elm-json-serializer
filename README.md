@@ -26,9 +26,16 @@ Elm Serializer uses elm 0.19.0. It is not widely available. So, to avoid limitia
 export ELM=/path/to/elm/0.19
 ```
 
+It's simpler to install it from your local computer:
+
 ```sh
-npm install -g elm-serializer
+git clone git@github.com:ghivert/elm-json-serializer.git
+cd elm-json-serializer
+npm install
+npm install -g .
 ```
+
+Because elm@0.19.0 is not yet available, the package is not released on NPM yet. It will be when elm will be available.
 
 # Usage
 

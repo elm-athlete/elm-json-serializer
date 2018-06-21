@@ -65,10 +65,9 @@ getDeclarationsInRawFiles
   -> (ModuleName, Maybe RawFile)
   -> (ModuleName, Maybe Declaration.Declaration)
 getDeclarationsInRawFiles typeName =
-  Tuple.mapSecond
-    (Maybe.andThen
+  Tuple.mapSecond <|
+    Maybe.andThen
       (Declaration.getDeclarationByName typeName)
-    )
 
 validDeclarationToImport
    : DecoderEncoder

@@ -50,47 +50,62 @@ generateTypedEncoderHelp { name, generics, constructors } =
   |> List.map String.newlineJoin
   |> String.newlineJoin
 
+caseConstructor : Type.ValueConstructor -> String
+caseConstructor { name, arguments } =
+  let fieldNameForArguments index _ = Shared.indexToFieldName index in
+  [ name
+  , arguments
+    |> List.indexedMap fieldNameForArguments
+    |> String.spaceJoin
+  , "->"
+  ]
+  |> String.spaceJoin
+
+constructorBodyEncoder : Type.ValueConstructor -> String
+constructorBodyEncoder { name, arguments } =
+  [ [ String.surroundByQuotes "type"
+    , ","
+    , "Encode.string"
+    , String.surroundByQuotes name
+    ]
+    |> String.spaceJoin
+    |> String.surroundByParen
+    |> List.singleton
+  , arguments
+    |> List.indexedMap argumentEncoder
+  ]
+  |> List.concat
+  |> String.join "\n    ,"
+  |> String.surroundByBrackets
+
 constructorEncoder : Type.ValueConstructor -> String
-constructorEncoder { name, arguments } =
-  String.append
-    ( [ name
-      , arguments
-        |> List.indexedMap (\index _ -> Shared.indexToFieldName index)
-        |> String.spaceJoin
-      , "->"
-      ]
-      |> String.spaceJoin
-    )
-    ( [ "Encode.object"
-      , "["
-      , [ [ "(" ++ String.surroundByQuotes "type" ++ "," ++ "Encode.string " ++ String.surroundByQuotes name ++ ")" ]
-        , arguments
-          |> List.indexedMap argumentEncoder
-        ]
-        |> List.concat
-        |> String.join "\n    ,"
-      , "]"
-      ]
-      |> List.map String.indent
-      |> String.join "\n  "
-    )
+constructorEncoder ({ name, arguments } as type_) =
+  [ "Encode.object"
+  , constructorBodyEncoder type_
+  ]
+  |> List.map String.indent
+  |> String.join "\n  "
+  |> String.append (caseConstructor type_)
 
 argumentEncoder : Int -> (Range.Range, Annotation.TypeAnnotation) -> String
 argumentEncoder index (_, annotation) =
   let fieldName = Shared.indexToFieldName index in
-  [ "(" ++ String.surroundByQuotes fieldName ++ ", " ++ selectWhatToDo fieldName annotation ++ ")"
+  [ String.surroundByQuotes fieldName
+  , encloseArgumentBody fieldName annotation
   ]
-  |> String.join "\n "
+  |> String.join ", "
+  |> String.surroundByParen
 
-selectWhatToDo : String -> Annotation.TypeAnnotation -> String
-selectWhatToDo fieldName annotation =
-  let foo = typeAnnotationEncoder fieldName annotation in
-  case annotation of
-    Annotation.Record definition -> "Encode.object [" ++ foo ++ "]"
-    Annotation.GenericType type_ -> foo ++ " " ++ fieldName
-    Annotation.Typed moduleName value annotations -> foo ++ " " ++ fieldName
-    _ -> ""
-  -- Debug.log "argu" (typeAnnotationEncoder fieldName (Debug.log "annotation" annotation))
+encloseArgumentBody : String -> Annotation.TypeAnnotation -> String
+encloseArgumentBody fieldName annotation =
+  let annotationEncoderBody = typeAnnotationEncoder fieldName annotation in
+  String.spaceJoin <|
+    case annotation of
+      Annotation.Record definition ->
+        [ "Encode.object", String.surroundByBrackets annotationEncoderBody ]
+      Annotation.GenericType type_ -> [ annotationEncoderBody, fieldName ]
+      Annotation.Typed moduleName value annotations -> [ annotationEncoderBody, fieldName ]
+      _ -> []
 
 typeAnnotationEncoder : String -> Annotation.TypeAnnotation -> String
 typeAnnotationEncoder recordName typeAnnotation =

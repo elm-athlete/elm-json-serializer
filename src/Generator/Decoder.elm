@@ -237,13 +237,13 @@ tupleFieldDecoder index value =
 
 addTupleMapper : List annotations -> String -> String
 addTupleMapper annotations =
-  String.append
-    (case List.length annotations of
+  String.append <|
+    case List.length annotations of
       2 -> "Decode.map Tuple.pair"
       3 -> "Decode.map tupleThree"
       4 -> "Decode.map tupleFour"
       _ -> "We should add more cases here..."
-    )
+
 
 addDecoderPipelineStructure : String -> String -> String
 addDecoderPipelineStructure name decoder =

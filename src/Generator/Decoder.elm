@@ -1,5 +1,6 @@
 module Generator.Decoder exposing (..)
 
+import Elm.Syntax.Base as Base
 import Elm.Syntax.Type as Type
 import Elm.Syntax.TypeAlias as Alias
 import Elm.Syntax.TypeAnnotation as Annotation
@@ -142,7 +143,7 @@ typeAnnotationDecoder : Annotation.TypeAnnotation -> (String, List (Dependency, 
 typeAnnotationDecoder typeAnnotation =
   case typeAnnotation of
     Annotation.Record definition -> recordDecoder definition
-    Annotation.GenericType type_ -> (genericTypeDecoder type_, [])
+    Annotation.GenericType type_ -> genericTypeDecoder type_ []
     Annotation.Typed moduleName value annotations -> typedDecoder moduleName value annotations
     -- Annotation.Unit ->
     Annotation.Tupled annotations -> tupledDecoder annotations
@@ -186,14 +187,20 @@ concatDecoderFieldsAndKeepDeps
 concatDecoderFieldsAndKeepDeps (content, deps) (accDecoder, accDeps) =
   (content :: accDecoder, accDeps ++ deps)
 
-genericTypeDecoder : String -> String
-genericTypeDecoder type_ =
+genericTypeDecoder : String -> List (Range.Range, Annotation.TypeAnnotation) -> (String, List (Dependency, String))
+genericTypeDecoder type_ annotations =
   case type_ of
-    "String" -> "Decode.string"
-    "Int" -> "Decode.int"
-    "Float" -> "Decode.float"
-    "Bool" -> "Decode.bool"
-    value -> "decode" ++ value
+    "String" -> ("Decode.string", [])
+    "Int" -> ("Decode.int", [])
+    "Float" -> ("Decode.float", [])
+    "Bool" -> ("Decode.bool", [])
+    "List" ->
+      let (annotations_, dependencies) = annotations
+                                         |> List.map Tuple.second
+                                         |> List.map typeAnnotationDecoder
+                                         |> flattenTuples in
+      ("Decode.list" ++ String.surroundByParen (String.spaceJoin annotations_), dependencies)
+    value -> ("decode" ++ value, [])
 
 typedDecoder
    : List String
@@ -201,14 +208,18 @@ typedDecoder
   -> List (Range.Range, Annotation.TypeAnnotation)
   -> (String, List (Dependency, String))
 typedDecoder moduleName type_ annotations =
-  (genericTypeDecoder type_, dependencyIfNotGenericType moduleName type_)
+  let (content, deps) = genericTypeDecoder type_ annotations in
+  (content, deps ++ dependencyIfNotGenericType moduleName type_)
 
+dependencyIfNotGenericType : Base.ModuleName -> String -> List (Dependency, String)
 dependencyIfNotGenericType moduleName type_ =
   case type_ of
     "String" -> []
     "Int" -> []
     "Float" -> []
     "Bool" -> []
+    "List" -> []
+    "Maybe" -> []
     value -> [ (InModule (String.join "." moduleName), type_) ]
 
 tupledDecoder

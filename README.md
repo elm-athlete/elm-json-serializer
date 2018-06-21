@@ -2,6 +2,16 @@
 
 This utility provides an easy way to generate `Json.Encode.Value` generators (i.e. `a -> Json.Encode.Value` functions) and `Json.Decode.Decoder` (i.e. `Json.Decode.Decoder a` functions) directly from your elm source files. How does it work? It is looking into your source files, parse them, and generates the corresponding encoders and decoders direcly into your source tree, in elm files, readable and formatted! (Thanks to elm-format!)
 
+# Table of Contents
+
+1. [Supported Types](#supported-types)
+2. [Installation](#installation)
+3. [Usage](#usage)
+4. [Why doing such a thing?](#why-doing-such-a-thing)
+5. [Feedback](#feedback)
+6. [Contributing](#contributing)
+7. [Thanks](#thanks)
+
 # Supported types
 
 Right now, it supports encoders and decoders generation for records and union types, and is able to handle dependencies automatically.  

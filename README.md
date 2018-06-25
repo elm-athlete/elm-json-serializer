@@ -29,7 +29,7 @@ export ELM=/path/to/elm/0.19
 It's simpler to install it from your local computer:
 
 ```sh
-git clone git@github.com:ghivert/elm-json-serializer.git
+git clone git@github.com:elm-athlete/elm-json-serializer.git
 cd elm-json-serializer
 npm install
 npm install -g .

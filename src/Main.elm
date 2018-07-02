@@ -63,16 +63,16 @@ type alias DecodersEncoders =
   , dependencies : List (Dependency, String)
   }
 
-main : Program () Model Msg
+main : Program Never Model Msg
 main =
-  Platform.worker
+  Platform.program
     { init = init
     , update = update
     , subscriptions = subscriptions
     }
 
-init : () -> (Model, Cmd Msg)
-init flags =
+init : (Model, Cmd Msg)
+init =
   (Model [] Dict.empty Dict.empty [], Cmd.none)
 
 updateAndThen : Msg -> (Model, Cmd Msg) -> (Model, Cmd Msg)

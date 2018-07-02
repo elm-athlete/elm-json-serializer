@@ -8,7 +8,10 @@ module String.Extra
     , surroundByParen
     , surroundByQuotes
     , surroundByBrackets
+    , fromInt
     )
+
+import Char
 
 camelize : String -> String
 camelize value =
@@ -46,3 +49,6 @@ surroundByParen value =
 surroundByBrackets : String -> String
 surroundByBrackets value =
   "[" ++ value ++ "]"
+
+fromInt : Int -> String
+fromInt = toString

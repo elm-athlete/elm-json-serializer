@@ -115,11 +115,11 @@ isSomeTypeOrAliasExposed typeName topLevelExpose =
         Found
       else
         NotFound
-    Exposing.TypeExpose { name, open } ->
+    Exposing.TypeExpose { name, constructors } ->
       if typeName == name then
         Found
       else
-        case open of
+        case constructors of
           Nothing -> NotFound
           Just _ -> CouldBeFound
     _ ->
